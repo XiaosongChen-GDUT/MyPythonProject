@@ -1,0 +1,5 @@
+<RCC>
+  <qresource prefix="pics">
+    <file>AGV.png</file>
+  </qresource>
+</RCC>
