@@ -13,12 +13,9 @@ matplotlib.rcParams['axes.unicode_minus'] = False	#axes.unicode_minus参数用�
 
 to_second_Floor = 3.15#1楼换层到2楼的高度
 to_third_Floor = 2.55#2楼换层到3楼的高度
+# file_path = '../Resource/WMSGraph_11_6.xlsx'
+file_path = '../Resource/WMSGraph_12_9.xlsx'
 class Model:
-    # nodes_data = []   # 用于存储节点数据
-    # edges_data = []   # 用于存储边数据
-    # pos = {}          # 用于存储节点位置
-    # node_colors = []  # 用于存储节点颜色
-
     def __init__(self):
         self.combined_graph = nx.Graph()
         #读取数据并创建地图
@@ -26,14 +23,12 @@ class Model:
         #添加地图属性
         self.combined_graph.graph['members']=[self.floor1, self.floor2, self.floor3]
 
-
     def findPath(self, start, end):
         path = nx.dijkstra_path(self.combined_graph, start, end)
         return path
 
     def create_Combined_Graph(self):#创建合并的地图
-        file_path = '../Resource/WMSGraph_11_6.xlsx'
-        # file_path = '../Resource/map_data2.xlsx'
+        #读取数据并创建地图
         data = pd.read_excel(file_path)
         floor1 = self.read_map(data, 1)
         floor2 = self.read_map(data, 2)
@@ -353,7 +348,7 @@ class Model:
 def main():
     # plt.style.use('_mpl-gallery')
     dm = Model()
-    combined_graph, floor1, floor2, floor3=dm.create_Combined_Graph()
+    combined_graph, floor1, floor2, floor3=dm.combined_graph, dm.floor1, dm.floor2, dm.floor3
 
     # node = dm.get_Node_BY_Attribute(combined_graph,'pos',(14,10,1))
     # PATH = dm.findPath(642,4135)
@@ -389,139 +384,16 @@ def main():
 if __name__ == '__main__':
     main()
 
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-from PyQt5 import QtWidgets
-from matplotlib.figure import Figure
-matplotlib.use("Qt5Agg")  # 声明使用QT5
-#继承自FigureCanvas的类
-class graph_FigureCanvas(FigureCanvas):
-    def __init__(self,floor = None,title = None, parent=None, width=15, height=5, dpi=100):
-        self.floor = floor
-        self.title = title
-        #第一步：创建一个创建Figure
-        self.fig = Figure(figsize=(width, height), dpi=dpi)# 创建图形对象并配置其参数
-        #第二步：在父类中激活Figure窗口
-        super(graph_FigureCanvas, self).__init__(self.fig)# 初始化父类
-        if 'members' in self.floor.graph:
-            floors = self.floor.graph['members']
-            # self.fig, self.axs = plt.subplots(1, len(floors), figsize=(15, 5))
-            self.axs = self.fig.subplots(1, len(floors))
-            # self.ax1 = self.fig.add_subplot(1,3,1)# 添加子图到图形中
-            # self.ax2 = self.fig.add_subplot(1,3,2)
-            # self.ax3 = self.fig.add_subplot(1,3,3)
-            # self.axs = [self.ax1,self.ax2,self.ax3]
-        else:
-        #     #第三步：创建一个子图，用于绘制图形用，111表示子图编号，如matlab的subplot(1,1,1)
-            self.ax = self.fig.add_subplot(111)# 添加子图到图形中
-        #第四步：就是画图，【可以在此类中画，也可以在其它类中画】,最好是在别的地方作图
 
-        self.setParent(parent) # 设置父窗口
-        self.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)# 设置大小策略为可扩展
-        self.updateGeometry()# 更新几何形状
-        self.fig.tight_layout()# 调整子图的布局
-
-        self.lef_mouse_pressed = False  # 鼠标左键是否按下
-        self.connect_event()  # 连接事件
-
-    def connect_event(self):
-        self.mpl_connect('button_press_event', self.on_mouse_press)  # 鼠标左键按下
-        self.mpl_connect('button_release_event', self.on_mouse_release)  # 鼠标左键释放
-        self.mpl_connect('motion_notify_event', self.on_mouse_move)  # 鼠标移动
-        self.mpl_connect("scroll_event", self.on_mouse_wheel)	#鼠标滚动事件
-    def on_mouse_press(self, event):
-        if event.button == 1:  # 鼠标左键
-            self.lef_mouse_pressed = True
-            print(f"on_mouse_press鼠标位置: ({event.x}, {event.y})")
-
-    def on_mouse_release(self, event):
-        if event.button == 1:  # 鼠标左键
-            self.lef_mouse_pressed = False
-            print(f"on_mouse_release鼠标位置: ({event.x}, {event.y})")
-
-    def on_mouse_move(self, event):
-        if self.lef_mouse_pressed:  # 鼠标左键按下
-            print(f"on_mouse_move鼠标位置: ({event.x}, {event.y})")
-
-    def on_mouse_wheel(self, event):
-        # 鼠标滚动事件
-        if event.button == 'up':
-            print(f"on_mouse_wheel鼠标滚动: 放大")
-            # self.ax.set_xlim(self.ax.get_xlim() * 1.1)
-            # self.ax.set_ylim(self.ax.get_ylim() * 1.1)
-        elif event.button == 'down':
-            print(f"on_mouse_wheel鼠标滚动: 缩小")
-            # self.ax.set_xlim(self.ax.get_xlim() * 0.9)
-            # self.ax.set_ylim(self.ax.get_ylim() * 0.9)
-        self.draw()  # 重绘图形
-
-    #单层地图绘制
-    def draw_floor(self):
-        start_time = time.time()
-        if 'members' in self.floor.graph:
-            members = self.floor.graph['members']
-            self.draw_floors(members, [f"Floor {i}" for i in range(1, len(members)+1)])
-        else:
-
-            # 获取节点位置和颜色
-            pos = nx.get_node_attributes(self.floor, 'pos')
-            colors = nx.get_node_attributes(self.floor, 'node_colors')
-            location = nx.get_node_attributes(self.floor, 'location')
-            # 提取 X, Y 画布坐标
-            x = [loc[0] for loc in location.values()]
-            y = [loc[1] for loc in location.values()]
-            self.ax.set_title(self.title)
-            # 绘制边
-            for edge in self.floor.edges():
-                x_edges = [location[edge[0]][0], location[edge[1]][0]]
-                y_edges = [location[edge[0]][1], location[edge[1]][1]]
-                self.ax.plot(x_edges, y_edges, c='gray',zorder=1)
-            self.ax.scatter(x, y, c=[colors[node] for node in self.floor.nodes()], marker='o',edgecolors='black',linewidths=0.7,zorder=2)
-            self.ax.set_xlabel('排 坐标')
-            self.ax.set_ylabel('列 坐标')
-            plt.tight_layout()#调整子图间距
-            self.draw()#更新绘图内容
-            end_time = time.time()
-            print(f"绘制{self.title}地图耗时：{end_time-start_time}秒")
-
-    def draw_floors(self, floors, titles):#绘制多个地图
-        start_time = time.time()
-        # 创建多个子图
-        # self.fig, self.axs = self.fig.subplots(1, len(floors), figsize=(15, 5))
-        # self.axs = self.fig.subplots(1, len(floors))
-        # 绘制每个子图
-        for ax, graph, title in zip(self.axs, floors, titles):
-            # 获取节点位置和颜色
-            pos = nx.get_node_attributes(graph, 'pos')
-            colors = nx.get_node_attributes(graph, 'node_colors')
-            location = nx.get_node_attributes(graph, 'location')
-            # 提取 X, Y 画布坐标
-            x = [loc[0] for loc in location.values()]
-            y = [loc[1] for loc in location.values()]
-            ax.set_title(title)
-            # 绘制边
-            for edge in graph.edges():
-                x_edges = [location[edge[0]][0], location[edge[1]][0]]
-                y_edges = [location[edge[0]][1], location[edge[1]][1]]
-                ax.plot(x_edges, y_edges, c='gray',zorder=1)
-            ax.scatter(x, y, c=[colors[node] for node in graph.nodes()], marker='o',edgecolors='black',linewidths=0.7,zorder=2)
-            ax.set_xlabel('排 坐标')
-            ax.set_ylabel('列 坐标')
-
-        self.fig.tight_layout()#调整子图间距
-        self.draw()#更新绘图内容
-        end_time = time.time()
-        print(f"绘制{len(floors)}层地图耗时：{end_time-start_time}秒")
-
-
-
+Status = {0: "空闲", 1: "忙碌", 2: "故障"}
 class Vehicle:
-    max_speed = 5  # AGV最大速度
-    acceleration = 2  # AGV加速度
-    current_position = 0  # AGV当前位置
-    current_speed = 0  # AGV当前速度
-
-    ID = None  # AGVID
     def __init__(self,View,Env, ID, initial_position=0, *path):
+        self.max_speed = 5  # AGV最大速度
+        self.acceleration = 2  # AGV加速度
+        self.deceleration = 2  # AGV减速度
+        self.current_speed = 0  # AGV当前速度
+        self.status = 0  # AGV当前状态 0-空闲 1-忙碌 2-故障
+
         self.view = View    # 图
         self.env = Env    # 环境
         self.ID = ID    # AGVID
@@ -568,12 +440,9 @@ class Vehicle:
             distance = self.DG.edges[start_node, end_node]['weight']  # 获取两节点之间的距离
             # 计算到达下一个节点所需的时间
             time_to_move = distance / speed
-
             # 移动过程
             # for _ in range(int(time_to_move)):
             time.sleep(time_to_move)  # 每秒钟更新一次
-            print(f"以速度 {speed} 移动到达: {end_node}")
-
             # 更新当前位置
             self.current_position = end_node
             x, y = self.DG.nodes[self.current_position]  # 获取目标节点的位置
@@ -582,3 +451,23 @@ class Vehicle:
             current_node_index += 1
             # print(f"到达节点: {end_node}")
         print("AGV已到达终点。")
+
+
+class Elevator:
+    def __init__(self, ID, elavator_position ,initial_floor, Env):
+        self.ID = ID  # 电梯ID
+        self.elavator_position = elavator_position  # 电梯位置
+        self.current_floor = initial_floor  # 电梯当前楼层
+        self.env = Env  # 环境
+        self.current_status = 0  # 电梯当前状态 0-空闲 1-忙碌 2-故障
+        self.max_speed = 1  # 电梯最大速度
+        self.acceleration = 1  # 电梯加速度
+        self.current_speed = 0  # 电梯当前速度
+        self.load_weight = 0  # 电梯载重量
+        self.load_capacity = 100  # 电梯载重容量
+        self.load_status = 0  # 电梯载重状态 0-空 1-满
+        self.load_direction = 0  # 电梯载重方向 0-上 1-下
+        self.load_weight_list = []  # 电梯载重列表
+
+
+
