@@ -12,9 +12,12 @@ from Program.DataModel import Model
 from Algorithm.PathPlanning import Path_Planning
 
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.animation import FuncAnimation
 from matplotlib.figure import Figure
+import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 from datetime import datetime
+import numpy as np
 import networkx as nx
 import matplotlib
 import time
@@ -26,8 +29,10 @@ class graph_FigureCanvas(FigureCanvas):
         self.title = title
         #第一步：创建一个创建Figure
         self.fig = Figure(figsize=(width, height), dpi=dpi)# 创建图形对象并配置其参数
+
         #第二步：在父类中激活Figure窗口
         super(graph_FigureCanvas, self).__init__(self.fig)# 初始化父类
+        # self.fig.patch.set_facecolor('#01386a')  # 设置绘图区域颜色
         if 'members' in self.floor.graph:
             floors = self.floor.graph['members']
             # self.fig, self.axs = plt.subplots(1, len(floors), figsize=(15, 5))
@@ -36,6 +41,12 @@ class graph_FigureCanvas(FigureCanvas):
         else:
             #     #第三步：创建一个子图，用于绘制图形用，111表示子图编号，如matlab的subplot(1,1,1)
             self.ax = self.fig.add_subplot(111)# 添加子图到图形中
+            # self.ax.spines['bottom'].set_position(('data', 0))  # 设置x轴线再Y轴0位置
+            # self.ax.spines['left'].set_position(('data',0))  # 设置y轴在x轴0位置
+            # self.ax.spines['top'].set_visible(False)  # 去掉上边框
+            # self.ax.spines['right'].set_visible(False)  # 去掉右边框
+            # self.ax.spines['bottom'].set_visible(False)  # 去掉下边框
+            # self.ax.patch.set_facecolor("#01386a")  # 设置ax区域背景颜色
         #第四步：就是画图，【可以在此类中画，也可以在其它类中画】,最好是在别的地方作图
 
         self.setParent(parent) # 设置父窗口
@@ -49,8 +60,38 @@ class graph_FigureCanvas(FigureCanvas):
 
     #重置地图画布
     def reset_canvas(self):
-        # self.fig.clear()
+        self.ax.cla()           # 清理绘图区
+        # self.figure.clf()       # 清理画布，清理画布后必须重新添加绘图区
         self.draw_floor()
+        self.fig.canvas.draw()  # 画布重绘
+        self.fig.canvas.flush_events()  # 刷新事件
+
+
+    def show_visited_process(self,graph,path,delay=0.01):
+        # colors = nx.get_node_attributes(graph, 'node_colors')
+        locations = nx.get_node_attributes(graph, 'location')
+        original_colors = self.scatter_collection.get_facecolors()
+        node_list = list(graph.nodes())
+
+        gray_value = mcolors.to_rgba('gray')
+        for node in path:
+            start_time = time.time()
+            # colors[node] = 'gray'  # 标记为已走过
+            # nx.set_node_attributes(graph, colors, 'node_colors')  # 更新nx图的节点颜色
+            node_index = node_list.index(node)  # 获取 node 在节点列表中的索引
+            original_colors[node_index] = gray_value  # 更新颜色
+            # color_values = [mcolors.to_rgba(color) for color in colors.values()]
+            # color_array = np.array(color_values)
+            # x, y = locations[node]
+            # self.ax.scatter(x, y, c='gray', marker='o', edgecolors='black', linewidths=0.7, zorder=2)  # 画出路径点,延时会越来越慢
+            # self.scatter_collection.set_facecolor(color_array)
+            self.scatter_collection.set_facecolor(original_colors)
+            # self.fig.canvas.draw()  # 重绘图形
+            self.fig.canvas.draw_idle()  # 画布渲染
+            self.fig.canvas.flush_events()  # 刷新事件
+            # time.sleep(delay)  # 暂停一段时间
+            print(f"已走过{node}，耗时{time.time()-start_time}秒") #0.25秒左右浮动，越来越慢
+
 
     #高亮显示路径
     def show_path(self,graph, path,algorithm_index):
@@ -60,16 +101,19 @@ class graph_FigureCanvas(FigureCanvas):
             locations = [graph.nodes[node]['location'] for node in path]  # 获取所有位置
             path_x = [loc[0] for loc in locations]  # 提取 x 坐标
             path_y = [loc[1] for loc in locations]  # 提取 y 坐标
-            # print(f"path_x: {path_x}")
-            # print(f"path_y: {path_y}")
             color = 'gray'
             if algorithm_index == 0:#dijkstra算法
                 color = 'blue'
             elif algorithm_index == 1:#A*算法
                 color = 'green'
-            elif algorithm_index == 3:#改进的A*算法
+            elif algorithm_index == 2:# 双向Dijkstra
+                color = 'purple'
+            elif algorithm_index == 3:#贝尔曼-福特
+                color = 'red'
+            elif algorithm_index == 4:#改进的A*算法
                 color = 'orange'
-            self.ax.scatter(path_x, path_y, color=color,marker='o',edgecolors='black',  linewidth=0.7, zorder=2)  # 画出路径
+            # self.ax.scatter(path_x, path_y, color=color,marker='o',edgecolors='black',  linewidth=0.7, zorder=2)  # 只画出路径点
+            self.ax.plot(path_x, path_y, color=color, marker='o', linewidth=0.7, zorder=2)  # 画出路径的边和点
             self.draw()  # 更新绘图
         except Exception as e:
             print(f"show_path error: {e}")
@@ -88,7 +132,7 @@ class graph_FigureCanvas(FigureCanvas):
             if click_x is None or click_y is None:
                 return
             # 设置一个阈值，用于确定点击坐标与节点坐标之间的“接近度”
-            threshold = 0.4
+            threshold = 0.5
             clicked_node = None
             # 获取节点位置
             location = nx.get_node_attributes(self.floor, 'location')
@@ -153,9 +197,9 @@ class graph_FigureCanvas(FigureCanvas):
             # 绘制每个子图
             for ax, graph, title in zip(self.ax_list, members, [f"Floor {i}" for i in range(1, len(members)+1)]):
                 # 获取节点位置和颜色
-                pos = nx.get_node_attributes(graph, 'pos')
                 colors = nx.get_node_attributes(graph, 'node_colors')
                 location = nx.get_node_attributes(graph, 'location')
+                pos = nx.get_node_attributes(graph, 'pos')
                 # 提取 X, Y 画布坐标
                 x = [loc[0] for loc in location.values()]
                 y = [loc[1] for loc in location.values()]
@@ -179,22 +223,27 @@ class graph_FigureCanvas(FigureCanvas):
             colors = nx.get_node_attributes(self.floor, 'node_colors')
             location = nx.get_node_attributes(self.floor, 'location')
             # 提取 X, Y 画布坐标
-            x = [loc[0] for loc in location.values()]
-            y = [loc[1] for loc in location.values()]
+            x, y = zip(*location.values())
+            # x = [loc[0] for loc in location.values()]
+            # y = [loc[1] for loc in location.values()]
             self.ax.set_title(self.title)
-            # 绘制边
+            # # 绘制边
             for edge in self.floor.edges():
                 x_edges = [location[edge[0]][0], location[edge[1]][0]]
                 y_edges = [location[edge[0]][1], location[edge[1]][1]]
                 self.ax.plot(x_edges, y_edges, c='gray',zorder=1)
+
                 # 获取边的权重值（假设可以通过 edge_weight 方法获取）
                 # edge_weight = self.floor.edges[edge]['weight']  # 直接获取权重值
                 # self.ax.text((x_edges[0] + x_edges[1]) / 2, (y_edges[0] + y_edges[1]) / 2, edge_weight, ha='center',
                 #              va='center',
                 #              color='black',
                 #              zorder=2)
-            # 绘制节点
-            self.ax.scatter(x, y, c=[colors[node] for node in self.floor.nodes()], marker='o',edgecolors='black',linewidths=0.7,zorder=1)
+            # 绘制散点
+            #self.scatter_collection包含了散点图的所有信息，包括颜色、标记、边缘颜色等。
+            self.scatter_collection = self.ax.scatter(x, y, c=[colors[node] for node in self.floor.nodes()], marker='o',edgecolors='black',linewidths=0.7,zorder=1)
+
+
             self.ax.set_xlabel('排 坐标')
             self.ax.set_ylabel('列 坐标')
             plt.tight_layout()#调整子图间距
@@ -519,6 +568,8 @@ class Ui_MainWindow(object):
         self.point_algorithm_comboBox.addItem("")
         self.point_algorithm_comboBox.addItem("")
         self.point_algorithm_comboBox.addItem("")
+        self.point_algorithm_comboBox.addItem("")
+        # self.point_algorithm_comboBox.addItem("")
         self.gridLayout.addWidget(self.point_algorithm_comboBox, 4, 1, 1, 1)
         self.heuristic_Qlable = QtWidgets.QLabel(self.test_path_planing)
         font = QtGui.QFont()
@@ -679,8 +730,9 @@ class Ui_MainWindow(object):
         self.point_algorithm_comboBox.setCurrentText(_translate("MainWindow", "Dijkstra"))
         self.point_algorithm_comboBox.setItemText(0, _translate("MainWindow", "Dijkstra"))
         self.point_algorithm_comboBox.setItemText(1, _translate("MainWindow", "Astar"))
-        self.point_algorithm_comboBox.setItemText(2, _translate("MainWindow", "has_path"))
-        self.point_algorithm_comboBox.setItemText(3, _translate("MainWindow", "self_Astar"))
+        self.point_algorithm_comboBox.setItemText(2, _translate("MainWindow", "双向Dijkstra"))
+        self.point_algorithm_comboBox.setItemText(3, _translate("MainWindow", "贝尔曼-福特"))
+        self.point_algorithm_comboBox.setItemText(4, _translate("MainWindow", "self_Astar"))
         self.heuristic_Qlable.setText(_translate("MainWindow", "启发函数"))
         self.heuristic_ComboBox.setCurrentText(_translate("MainWindow", "欧几里得"))
         self.heuristic_ComboBox.setItemText(0, _translate("MainWindow", "欧几里得"))
@@ -707,13 +759,13 @@ class Ui_MainWindow(object):
             algorithm_index = self.point_algorithm_comboBox.currentIndex()  # 获取算法索引
             # 获取当前日期和时间
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            if algorithm_index == 2:#判断存在路径
-                path,cost = self.path_planing.has_path(floor, source, target)
-            else:
-                path, cost = self.path_planing.run(floor, source, target, algorithm_index, heuristic_index)  # 运行路径算法
+            # if algorithm_index == 2:#判断存在路径
+            #     path,cost = self.path_planing.has_path(floor, source, target)
+            # else:
+            take_time, path, cost, turn_count = self.path_planing.Analyze_Path(floor, source, target, algorithm_index, heuristic_index)  # 运行路径算法
+            canvas.show_visited_process(floor,path)
             canvas.show_path(floor,path,algorithm_index)    # 显示路径
-            cost,turn_count = self.path_planing.Analyze_Path(floor,path)
-            log_message = f"{current_time} - 路径算法测试案例：起点{source}, 终点{target}, 算法：{algorithm_name},启发函数：{heristic_name}, 路径：{path}，长度：{cost}, 转向次数：{turn_count}。"
+            log_message = f"{current_time} - 路径算法测试案例：起点{source}, 终点{target}, 算法：{algorithm_name},启发函数：{heristic_name}, 路径：{path}，最短距离：{cost}, 耗时：{take_time}秒， 转向次数：{turn_count}。"
                 #将日志信息输出到文本框
             self.textBrowser.append(log_message)
         except Exception as e:
@@ -765,24 +817,11 @@ class Ui_MainWindow(object):
     def handle_Save_button(self):
         print("Save")
         pass
-if __name__ == '__main__':
-    import sys
-    from qt_material import apply_stylesheet
-    import qdarkstyle
-    from PyQt5.QtWidgets import QApplication, QMainWindow
 
-    try:
-        app = QApplication(sys.argv)
-        # setup stylesheet
-        # apply_stylesheet(app, theme='dark_cyan.xml')
-        dark_stylesheet = qdarkstyle.load_stylesheet_pyqt5()
-        app.setStyleSheet(dark_stylesheet)
-        MainWindow = QMainWindow()
-        ui = Ui_MainWindow()
-        ui.setupUi(MainWindow)
-        MainWindow.show()
-        sys.exit(app.exec_())
-    except Exception as e:
-        print(f"应用启动失败: {e}")  # 错误处理，输出启动失败原因
+
+
+
+
+
 
 

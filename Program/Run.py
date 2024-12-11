@@ -1,17 +1,30 @@
+from PyQt5.QtWidgets import QApplication, QMainWindow
+from qt_material import apply_stylesheet
+from Program.View import Ui_MainWindow
+import qdarkstyle
 import simpy
-import Control
-import MapView
-import DataModel
+import sys
+
+
 
 def main():
     env = simpy.Environment()
-    DG = DataModel.Model().read_map()#加载地图数据，返回有向图，节点位置，节点颜色
-    # DG, pos, node_colors = DataModel.Model().read_map()#加载地图数据，返回有向图，节点位置，节点颜色
-    control = Control.Control(env)#初始化控制类
-    view = MapView.MapView(DG,env, control)#初始化视图类
-    # view = MapView.MapView(DG, pos, node_colors,env, control)#初始化视图类
-    control.set_view(view)#设置视图类
-    view.mainloop()
+    try:
+        app = QApplication(sys.argv)
+        # setup stylesheet
+        # apply_stylesheet(app, theme='dark_cyan.xml')
+        #加载qdarkstyle样式
+        dark_stylesheet = qdarkstyle.load_stylesheet_pyqt5()
+        app.setStyleSheet(dark_stylesheet)
+        MainWindow = QMainWindow()
+
+        ui = Ui_MainWindow()
+        ui.setupUi(MainWindow)
+        MainWindow.show()
+        sys.exit(app.exec_())
+    except Exception as e:
+        print(f"应用启动失败: {e}")  # 错误处理，输出启动失败原因
+
 
 if __name__ == '__main__':
     main()

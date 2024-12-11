@@ -349,21 +349,6 @@ def main():
     # plt.style.use('_mpl-gallery')
     dm = Model()
     combined_graph, floor1, floor2, floor3=dm.combined_graph, dm.floor1, dm.floor2, dm.floor3
-
-    # node = dm.get_Node_BY_Attribute(combined_graph,'pos',(14,10,1))
-    # PATH = dm.findPath(642,4135)
-    # print(PATH)
-    # node2 = dm.get_Node_BY_Attribute(floor1,'pos',(14,10,1))
-    # print(node2)
-
-    # print(floor1)
-    # print(floor2)
-    # print(floor3)
-    # print(f"合并地图：{combined_graph}")
-
-    # 绘制地图
-    # dm.draw_floor(floor1, "Floor 1")
-
     # 绘制所有楼层地图
     dm.draw_floors([floor1, floor2, floor3], ["Floor 1", "Floor 2", "Floor 3"])
 
@@ -372,10 +357,8 @@ def main():
     # # 动态更新节点与边的颜色
     # for node in path:
     #     dm.update_colors(floor1, [node])  # 每次只更新当前节点的颜色
-
     #绘制3维地图
     # dm.draw_3D_map(combined_graph)
-
     # # 绘制每一层地图
     # dm.draw_floor(floor1, "Floor 1")
     # dm.draw_floor(floor2, "Floor 2")
@@ -387,7 +370,7 @@ if __name__ == '__main__':
 
 Status = {0: "空闲", 1: "忙碌", 2: "故障"}
 class Vehicle:
-    def __init__(self,View,Env, ID, initial_position=0, *path):
+    def __init__(self,View,Env, ID, initial_position=0):
         self.max_speed = 5  # AGV最大速度
         self.acceleration = 2  # AGV加速度
         self.deceleration = 2  # AGV减速度
@@ -398,7 +381,6 @@ class Vehicle:
         self.env = Env    # 环境
         self.ID = ID    # AGVID
         self.current_position = initial_position     # AGV初始位置
-        self.path = path  # 路径
         self.create_show( self.current_position)  # 创建AGV图片
         self.image = mpimg.imread("../Resource/AGV.png")  # 图片
 
@@ -460,14 +442,17 @@ class Elevator:
         self.current_floor = initial_floor  # 电梯当前楼层
         self.env = Env  # 环境
         self.current_status = 0  # 电梯当前状态 0-空闲 1-忙碌 2-故障
-        self.max_speed = 1  # 电梯最大速度
-        self.acceleration = 1  # 电梯加速度
+        self.max_speed = 1      # 电梯最大速度
+        self.acceleration = 1   # 电梯加速度
         self.current_speed = 0  # 电梯当前速度
-        self.load_weight = 0  # 电梯载重量
-        self.load_capacity = 100  # 电梯载重容量
+        self.wait_time = 1      # 电梯等待时间
+
         self.load_status = 0  # 电梯载重状态 0-空 1-满
         self.load_direction = 0  # 电梯载重方向 0-上 1-下
-        self.load_weight_list = []  # 电梯载重列表
+        self.Task_list = []  # 电梯载重列表
+
+
+
 
 
 
