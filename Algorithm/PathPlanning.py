@@ -1,5 +1,5 @@
 # This file contains the implementation of the A* algorithm for path planning
-from networkx.algorithms.shortest_paths.weighted import _weight_function
+from networkx.algorithms.shortest_paths.weighted import _weight_function, _dijkstra
 import networkx as nx
 from Program.DataModel import Model
 from heapq import heappop, heappush
@@ -10,9 +10,41 @@ import time
 
 
 class Path_Planning:
-    def __init__(self):
-        pass
+    def __init__(self,canvasList):
+        self.canvasList = canvasList
+        self.first_canvas = canvasList[0]
+        self.second_canvas = canvasList[1]
+        self.third_canvas = canvasList[2]
+        #地图
+        self.first_floor = canvasList[0].floor
+        self.second_floor = canvasList[1].floor
+        self.third_floor = canvasList[2].floor
 
+        self.first_landmarks_index = [381, 369, 357,857,845,833,1324,1300,1629,1661]  # 地标点
+        first_location = nx.get_node_attributes(self.first_floor, 'location')
+        # 地标点的坐标
+        self.first_landmarks_location = {node: first_location[node] for node in self.first_landmarks_index}
+
+        self.first_landmarks = {}  # 初始化字典
+        # # 计算每个地标点到每个节点的距离
+        for index in self.first_landmarks_index:
+            self.first_landmarks[index] = {}
+            # for node, loc in first_location.items():
+                # 计算当前节点到地标的距离
+                # distance = math.hypot(loc[0] - self.first_landmarks_location[index][0], loc[1] - self.first_landmarks_location[index][1])
+                # distance = abs(loc[0] - self.first_landmarks_location[index][0])+ abs(loc[1] - self.first_landmarks_location[index][1])
+            distance = nx.shortest_path_length(self.first_floor,source=index,weight='weight')
+                # print("landmark:", index, "node:", node, "distance:", distance)
+                # 将结果存储在字典中，使用 (node, id) 作为键来唯一标识
+                # self.first_landmarks[index][node] = distance
+            self.first_landmarks[index] = distance
+        # L_cost = {}
+        # for index in self.first_landmarks_index:
+        #     length = nx.shortest_path_length(self.first_floor, source=index, weight='weight')
+        #     L_cost[index] = length
+            # print(f"Landmark {index} length: {length}")
+
+        # print(self.first_landmarks[381])
 
     def run(self, graph, source, target, algorithm_index=None, heuristic_index=None):
         try:
@@ -29,8 +61,8 @@ class Path_Planning:
                 return self.A_star(graph, source, target, heuristic_index, weight)
             elif algorithm_index == 2:# 双向Dijkstra
                 return self.BiDirectional_Dijkstra(graph, source, target, weight)
-            elif algorithm_index == 3:# 贝尔曼-福特
-                return self.Bellman_Ford(graph, source, target, weight)
+            elif algorithm_index == 3:# ATL_star
+                return self.ATL_star(graph, source, target, heuristic_index, weight)
             elif algorithm_index == 4:#改进的A*算法
                 return self.improve_A_star(graph, source, target, heuristic_index, weight)
             else:
@@ -38,26 +70,155 @@ class Path_Planning:
         except ValueError as ve:
             print(f"ValueError: {ve}")
 
+    ## 返回路径，路径长度，探索过的节点
     def A_star(self,graph, source, target, heuristic_index=None, weight='weight'):
-        # The default heuristic is h=0 - same as Dijkstra's algorithm
+
         location = nx.get_node_attributes(graph, 'location')
         # 以画布中的绝对位置作为启发式预估参数
         if heuristic_index == 0:#欧几里得距离作为启发式函数:两点间的最短直线距离
             heuristic = lambda u, v: math.hypot(location[v][0] - location[u][0], location[v][1] - location[u][1])
         elif heuristic_index == 1:#曼哈顿距离作为启发式函数:横纵坐标绝对值之和
-            heuristic = lambda u, v: abs(location[v][0] - location[u][0]) + abs(location[v][1] - location[u][1])
+            heuristic = lambda u, v:  abs(location[v][0] - location[u][0]) +  abs(location[v][1] - location[u][1])
         elif heuristic_index == 2:#切比雪夫距离作为启发式函数：各座标数值差的最大值。适用于走斜线
             heuristic = lambda u, v: max((location[v][0] - location[u][0]), abs(location[v][1] - location[u][1]))
         else:
-            heuristic = None
-        path = nx.astar_path(graph, source=source, target=target, heuristic=heuristic, weight=weight)
-        cost = nx.path_weight(graph, path, weight)
-        return path, cost
+            heuristic = 0   # The default heuristic is h=0 - same as Dijkstra's algorithm
 
+        # path = nx.astar_path(graph, source=source, target=target, heuristic=heuristic, weight=weight)
+        # cost = nx.path_weight(graph, path, weight)
+        push = heappush    # push function for the heap堆的Push函数
+        pop = heappop     # pop function for the heap堆的Pop函数
+        weight_function = _weight_function(graph, weight)  # weight function for the graph
+        G_succ = graph._adj  # 用于存储图中每个节点的邻接信息{1: {2: {'weight': 1.5}}, 2: {1: {'weight': 1.5}, 3: {'weight': 1.5}}, 3: {2: {'weight': 1.5}}}
+        c = count()  # 计数器，用于生成唯一的ID
+        queue = [(0, next(c), source, 0 ,None)]  # 队列，元素为元组(节点的总代价，ID，当前节点，到当前节点成本，父节点)
+        enqueued = {}  # 记录节点是否已经入队，记录到达节点的距离  和 节点到目标节点启发式评估值
+        explored = {}  # 记录节点是否已经探索过
+        while queue:
+            # 弹出队列中代价最小的元素
+            # 元组(节点的总代价，ID，当前节点，到当前节点成本，父节点)
+            _, __, curnode, dist, parent = pop(queue)
+            if curnode == target:
+                path = [curnode]
+                node = parent
+                while node is not None:
+                    path.append(node)
+                    node = explored[node]
+                path.reverse()
+                return path, nx.path_weight(graph, path, weight) , explored
+            if curnode in explored:         # 已经探索过？
+                if explored[curnode] is None:  # 父节点是None,说明是源节点，跳过
+                    continue
+                # 之前的距离和本次的距离比较谁优
+                qcost, h = enqueued[curnode]
+                if qcost <= dist:  # 之前的距离更优，跳过
+                    continue
+            explored[curnode] = parent  # 标记为已经探索过
+            # 遍历当前节点的邻居节点
+            for neighbor, datas in G_succ[curnode].items():
+                # 计算从当前节点到邻居节点的距离
+                cost = weight_function(curnode, neighbor, datas)
+                if cost is None:
+                    continue
+                ncost = dist + cost     # 到邻居节点的成本
+                if neighbor in enqueued:
+                    qcost, h = enqueued[neighbor]
+                    if qcost <= ncost:  # 之前的距离更优，跳过
+                        continue
+                else:               # 当前距离更优，更新队列
+                    h = heuristic(neighbor, target)
+                enqueued[neighbor] = (ncost, h)
+                push(queue, (ncost + h, next(c), neighbor, ncost, curnode))
+        raise nx.NetworkXNoPath(f"Node {target} not reachable from {source}")
+
+    def ATL_star(self,graph, source, target, heuristic_index=None, weight='weight'):
+        location = nx.get_node_attributes(graph, 'location')
+        alpha = 1  # g(n)实际函数的权重
+        beta = 1.2  # h(n)预估函数的权重
+        # path = nx.astar_path(graph, source=source, target=target, heuristic=heuristic, weight=weight)
+        # cost = nx.path_weight(graph, path, weight)
+        push = heappush    # push function for the heap堆的Push函数
+        pop = heappop     # pop function for the heap堆的Pop函数
+        weight_function = _weight_function(graph, weight)  # weight function for the graph
+        G_succ = graph._adj  # 用于存储图中每个节点的邻接信息{1: {2: {'weight': 1.5}}, 2: {1: {'weight': 1.5}, 3: {'weight': 1.5}}, 3: {2: {'weight': 1.5}}}
+        c = count()  # 计数器，用于生成唯一的ID
+        queue = [(0, next(c), source, 0 ,None)]  # 队列，元素为元组(节点的总代价，ID，当前节点，到当前节点成本，父节点)
+        enqueued = {}  # 记录节点是否已经入队，记录到达节点的距离  和 节点到目标节点启发式评估值
+        explored = {}  # 记录节点是否已经探索过
+        while queue:
+            # 弹出队列中代价最小的元素
+            # 元组(节点的总代价，ID，当前节点，到当前节点成本，父节点)
+            _, __, curnode, dist, parent = pop(queue)
+            if curnode == target:
+                path = [curnode]
+                node = parent
+                while node is not None:
+                    path.append(node)
+                    node = explored[node]
+                path.reverse()
+                return path, nx.path_weight(graph, path, weight) , explored
+            if curnode in explored:         # 已经探索过？
+                if explored[curnode] is None:  # 父节点是None,说明是源节点，跳过
+                    continue
+                # 之前的距离和本次的距离比较谁优
+                qcost, h = enqueued[curnode]
+                if qcost <= dist:  # 之前的距离更优，跳过
+                    continue
+            explored[curnode] = parent  # 标记为已经探索过
+            # 遍历当前节点的邻居节点
+            for neighbor, datas in G_succ[curnode].items():
+                # 计算从当前节点到邻居节点的距离
+                cost = weight_function(curnode, neighbor, datas)
+                if cost is None:
+                    continue
+                # ncost = dist + cost     # 到邻居节点的成本
+                turn_cost = self.Turn_Cost(location,parent,neighbor,target)  # 引入拐点成本
+                ncost = dist + cost + turn_cost    # 到邻居节点的成本
+                if neighbor in enqueued:
+                    qcost, h = enqueued[neighbor]
+                    if qcost <= ncost:  # 之前的距离更优，跳过
+                        continue
+                else:               # 当前距离更优，更新队列
+                    h = self.ATL_heuristic(neighbor, target,heuristic_index,location)
+                enqueued[neighbor] = (ncost, h)
+                # print("A:", curnode, "Z:", neighbor,"COST:", cost, "lower_bound:", h)
+                push(queue, (alpha * ncost + beta * h, next(c), neighbor, ncost, curnode))
+        raise nx.NetworkXNoPath(f"Node {target} not reachable from {source}")
+
+    def ATL_heuristic(self, A, Z, heuristic_index, location):
+        # # 以画布中的绝对位置作为启发式预估参数
+        if heuristic_index == 0:#欧几里得距离作为启发式函数:两点间的最短直线距离
+            heuristic = math.hypot(location[Z][0] - location[A][0], location[Z][1] - location[A][1])
+        elif heuristic_index == 1:#曼哈顿距离作为启发式函数:横纵坐标绝对值之和
+            heuristic = abs(location[Z][0] - location[A][0]) +  abs(location[Z][1] - location[A][1])
+        elif heuristic_index == 2:#切比雪夫距离作为启发式函数：各座标数值差的最大值。适用于走斜线
+            heuristic = max((location[Z][0] - location[A][0]), abs(location[Z][1] - location[A][1]))
+        else:
+            heuristic = 0   # The default heuristic is h=0 - same as Dijkstra's algorithm
+        # ATL距离启发式函数, A为起点，Z为终点，landmarks为地标点集合，location为节点坐标集合
+        # straight_line_distance = lambda A, Z: math.hypot(location[Z][0] - location[A][0], location[Z][1] - location[A][1])
+        # landmark_estimates = max([
+        #     abs(self.first_landmarks[L][Z] - self.first_landmarks[L][A])
+        #     for L in self.first_landmarks_index
+        # ])
+        for L in self.first_landmarks_index:
+            # lower_bound = abs(self.first_landmarks[L][Z] - self.first_landmarks[L][A])
+            lower_bound = self.first_landmarks[L][Z] - self.first_landmarks[L][A]
+            if lower_bound - heuristic > 0.001 :
+                # print("A:", A, "Z:", Z ,"lower_bound:", lower_bound, "h:", heuristic)
+                heuristic = lower_bound
+        return heuristic
+
+        #     # return landmark_estimates
+        # print("A:", A, "Z:", Z ,"lower_bound:", landmark_estimates, "h:", heuristic)
+        # return max(heuristic, landmark_estimates)
+
+
+    ## 返回路径，路径长度，探索过的节点
     def improve_A_star(self, graph, source, target, heuristic_index, weight='weight'):
         try:
-            k = 1.5  # h(n)预估函数的权重
-            p = 0.00001  # h(n)的衡量单位
+            alpha = 1  # g(n)实际函数的权重
+            beta = 1.5  # h(n)预估函数的权重
             location = nx.get_node_attributes(graph, 'location')
             # 以画布中的绝对位置作为启发式预估函数参数
             if heuristic_index == 0:#欧几里得距离作为启发式函数:两点间的最短直线距离
@@ -76,7 +237,7 @@ class Path_Planning:
             c = count()  # 计数器，用于生成唯一的ID
             queue = [(0, next(c), source, 0 ,None)]  # 队列，元素为元组(节点的总代价，ID，当前节点，到当前节点成本，父节点)
             enqueued = {}  # 记录节点是否已经入队，记录到达节点的距离  和 节点到目标节点启发式评估值
-            explored = {}  # 记录节点是否已经探索过
+            explored = {}  # 记录节点是否已经探索过,记录父节点
             while queue:
             #     # 弹出队列中代价最小的元素
             #     # 元组(节点的总代价，ID，当前节点，到当前节点成本，父节点)
@@ -88,7 +249,7 @@ class Path_Planning:
                         path.append(node)           # 反向构建路径
                         node = explored[node]       # 回溯父节点
                     path.reverse()                  # 反转路径
-                    return path, nx.path_weight(graph, path, weight)
+                    return path, nx.path_weight(graph, path, weight), explored  # 返回路径，路径长度，探索过的节点
                 if current_node in explored:        # 2.已经探索过，跳过
                     if explored[current_node] is None:  # 已经探索过，但父节点为None，说明是源节点，跳过
                         continue
@@ -111,22 +272,80 @@ class Path_Planning:
                             continue
                     else:# 5.邻居节点没有入队
                         h = heuristic(neighbor, target)  # 计算邻居节点到目标节点的启发式评估值
-                        h = k * h * (1 + p)                 # 为了区别相同的f(n)，引入一个权重p
-
-                        # h = heuristic(neighbor, target)  # 计算邻居节点到目标节点的启发式评估值
                     enqueued[neighbor] = (ncost, h)      # 记录起点到邻居节点的距离ncost和邻居节点到目标节点的启发式评估值h
-                    push(queue, (ncost + h, next(c), neighbor, ncost, current_node))  # 6.入队，并更新队列
-                    # y = ncost + h 为A*算法的评估值，用于判断节点的优先级，使得算法更加贪婪，更加关注距离短的节点
+                    push(queue, (alpha * ncost + beta * h, next(c), neighbor, ncost, current_node))  # 6.入队，并更新队列
+                    # f = ncost + h 为A*算法的评估值，用于判断节点的优先级，使得算法更加贪婪，更加关注距离短的节点
             raise nx.NetworkXNoPath("No path between %s and %s." % (source, target))  # 6.找不到路径，抛出异常
         except Exception as e:
             print(f"improve_A_star - Exception: {e}")
 
-
+    ## 返回路径，路径长度，探索过的节点
     def Dijkstra(self,graph, source, target,  weight='weight'):
         # 调用networkx的dijkstra算法
-        path = nx.dijkstra_path(graph, source=source, target=target, weight=weight)
-        cost = nx.path_weight(graph, path, weight)
-        return path, cost
+        # path = nx.dijkstra_path(graph, source=source, target=target, weight=weight)
+        # cost = nx.path_weight(graph, path, weight)
+        cutoff = None
+        pred = None
+        paths ={source: [source]}          #保存路径，用于存储从源节点到每个其他节点的路径列表。字典的键是节点标签，值是从源节点到该节点的路径（一个节点序列）。
+
+        if source not in graph:
+            raise nx.NodeNotFound(f"Node {source} not found in graph")
+        if target not in graph:
+            raise nx.NodeNotFound(f"Node {target} not found in graph")
+        if source == target:
+            return 0, 0, 0
+        #G_succ图 G 的邻接表，存储了每个节点的后继节点。{1: {2: {'weight': 1.5}}, 2: {1: {'weight': 1.5}, 3: {'weight': 1.5}}......}
+        G_succ = graph._adj  # For speed-up (and works for both directed and undirected graphs)
+        weight_function = _weight_function(graph, weight)  # weight function for the graph
+        push = heappush         #push 和 pop：分别是用于插入和移除优先队列元素的函数
+        pop = heappop
+        dist = {}               # 【闭合列表】用于存储从源节点到其他节点的最终距离。【确认了最短路径】
+        seen = {}               # 记录每个节点的当前最短路径长度。【暂时的，动态的】
+        # fringe is heapq with 3-tuples (distance,c,node)
+        # use the count c to avoid comparing nodes (may not be able to)
+        c = count()
+        fringe = []             # 优先队列（最小堆）【开放列表】，存储节点及其对应的路径成本，通过 (距离, 计数, 节点) 的三元组进行管理，以避免节点比较。
+        # for source in sources:
+        seen[source] = 0
+        push(fringe, (0, next(c), source))
+        while fringe:
+            (d, _, v) = pop(fringe)      # 当 fringe 不为空时，弹出最小距离的节点 (d, _, v)。
+            if v in dist:
+                continue  # already searched this node.
+            dist[v] = d
+            if v == target:
+                return paths[v], dist[v], dist.keys()            # 找到目标节点，返回路径长度和路径
+                # break
+            for u, e in G_succ[v].items():      # 遍历当前节点的邻居节点
+                cost = weight_function(v, u, e)          # 计算当前节点到邻居节点的距离
+                if cost is None:                # 无法到达的节点，跳过
+                    continue
+                vu_dist = dist[v] + cost        # 到邻居节点的总代价：起点到当前节点的距离 + 当前节点到邻居节点的距离
+                if cutoff is not None:          # 距离超过限制阈值，则跳过本次邻居节点的探索
+                    if vu_dist > cutoff:
+                        continue
+                if u in dist:                   # 已经探索过，且距离更短，跳过本次邻居节点的探索
+                    u_dist = dist[u]
+                    if vu_dist < u_dist:
+                        #如果新路径长度更短，则说明存在矛盾路径，可能是由于图中存在负权重边或环（即在最短路径算法中不应出现的情形）。
+                        raise ValueError("Contradictory paths found:", "negative weights?")
+                    #当前路径和之前发现的路径长度是否相同
+                    elif pred is not None and vu_dist == u_dist:
+                        pred[u].append(v)       #记录多条路径可能导致同样的最短距离。这在某些情况下是有用的，如寻找多条路径的场景。
+                elif u not in seen or vu_dist < seen[u]:    # 邻居节点没有入队，或距离更短，则入队
+                    seen[u] = vu_dist
+                    push(fringe, (vu_dist, next(c), u))
+                    if paths is not None:
+                        paths[u] = paths[v] + [u]
+                    if pred is not None:
+                        pred[u] = [v]
+                elif vu_dist == seen[u]:
+                    if pred is not None:
+                        pred[u].append(v)
+        raise nx.NetworkXNoPath("No path between %s and %s." % (source, target))  # 6.找不到路径，抛出异常
+        # The optional predecessor and path dictionaries can be accessed
+        # by the caller via the pred and paths objects passed as arguments.
+
 
     def BiDirectional_Dijkstra(self,graph, source, target, weight='weight'):
         # 调用networkx的bidirectional_dijkstra算法
@@ -159,9 +378,9 @@ class Path_Planning:
         threshold = 0.1
         # 判断是否在 x 和 y 轴上都超过阈值,出现拐点
         if delta_x > threshold and delta_y > threshold:
-            if next_node == target:      # 目标节点，转向代价为0.5
+            if next_node == target:      # 目标节点，转向代价
                 return target_turn_cost
-            else:                        # 普通节点，转向代价为1
+            else:                        # 普通节点，转向代价
                 return turn_cost
         return 0
 
@@ -170,7 +389,7 @@ class Path_Planning:
     def Analyze_Path(self,graph, source, target, algorithm_index=None, heuristic_index=None):
         turn_count = 0  # 初始化转向计数
         start_time = time.time()
-        path, cost = self.run(graph, source, target, algorithm_index, heuristic_index)
+        path, cost, explored = self.run(graph, source, target, algorithm_index, heuristic_index)
         take_time = time.time() - start_time
         if cost == 0 or path is None:
             return take_time, path, cost, turn_count  # 路径不存在，返回0
@@ -196,7 +415,7 @@ class Path_Planning:
                 # print(f"发生转向: parent_pos={parent_pos}, next_pos={next_pos},delta_x={delta_x},delta_y={delta_y}")
                 turn_count += 1  # 如果转向，计数加
 
-        return take_time, path, cost, turn_count
+        return take_time, path, explored, cost, turn_count
 
 
 def main():
