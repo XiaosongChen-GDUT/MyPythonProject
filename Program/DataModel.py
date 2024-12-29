@@ -34,20 +34,26 @@ class Model:
         floor2 = self.read_map(data, 2)
         floor3 = self.read_map(data, 3)
         self.combined_graph = nx.compose_all([floor1, floor2, floor3])
+        enter_point = [51,348,636,925,1110,1620]
+        out_point = [445,820,971,1156]
+        #1501、1540定位托盘出口点
 
-        #1楼接驳点
+        #1楼提升机接驳点
         first_node_A =  self.get_Node_BY_Attribute(floor1, 'pos',(14,10,1))#642
         first_node_B =  self.get_Node_BY_Attribute(floor1, 'pos',(24,10,1))#1116
         first_node_C =  self.get_Node_BY_Attribute(floor1, 'pos',(14,42,1))#674
         first_node_D =  self.get_Node_BY_Attribute(floor1, 'pos',(24,42,1))#1148
+        floor1.graph['connect_point']= [first_node_A, first_node_B, first_node_C, first_node_D]
         #2楼接驳点
         second_node_A =  self.get_Node_BY_Attribute(floor2, 'pos',(14,10,2))#2374
         second_node_B =  self.get_Node_BY_Attribute(floor2, 'pos',(24,10,2))#2844
         second_node_C =  self.get_Node_BY_Attribute(floor2, 'pos',(14,42,2))#2406
         second_node_D =  self.get_Node_BY_Attribute(floor2, 'pos',(24,42,2))#2876
+        floor2.graph['connect_point'] = [second_node_A, second_node_B, second_node_C, second_node_D]
         #3楼接驳点
         third_node_A =  self.get_Node_BY_Attribute(floor3, 'pos',(14,10,3))#3899
         third_node_B =  self.get_Node_BY_Attribute(floor3, 'pos',(24,10,3))#4135
+        floor3.graph['connect_point'] = [third_node_A, third_node_B]
         # 连接1-2楼接驳点
         self.combined_graph.add_edge(first_node_A, second_node_A,weight=to_second_Floor)
         self.combined_graph.add_edge(first_node_B, second_node_B,weight=to_second_Floor)
@@ -56,6 +62,7 @@ class Model:
         # 连接2-3楼接驳点
         self.combined_graph.add_edge(second_node_A, third_node_A,weight=to_third_Floor)
         self.combined_graph.add_edge(second_node_B, third_node_B,weight=to_third_Floor)
+
         return self.combined_graph, floor1, floor2, floor3
         # 合并地图属性
         # self.combined_graph.graph['pos'] = {**floor1.graph['pos'], **floor2.graph['pos'], **floor3.graph['pos']}#解包操作符 **。这个操作符使得能够将多个字典中的键值对合并为一个新的字典。
