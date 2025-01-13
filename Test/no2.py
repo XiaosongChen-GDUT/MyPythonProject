@@ -3,8 +3,7 @@ import networkx as nx
 import matplotlib.pyplot as plt
 import time
 # 假设你的Python脚本和Resource文件夹在同一个目录下
-# file_path = '../Resource/data.xlsx'
-file_path = '../Resource/map_data2.xlsx'
+file_path = '../Resource/WMSGraph_12_9.xlsx'
 # 记录开始时间
 start_time = time.time()
 # 读取Excel文件

@@ -10,6 +10,7 @@ from datetime import datetime
 import matplotlib
 
 matplotlib.use("Qt5Agg")  # 声明使用QT5
+'''对UI界面的初始化和定义、绑定按钮的触发函数'''
 class Ui_MainWindow(object):
     def __init__(self):
         #读取数据

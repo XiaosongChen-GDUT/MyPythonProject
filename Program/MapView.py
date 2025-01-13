@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg,NavigationToolbar2Tk
 import time
 
-
+'''后续暂时没有用到这个类'''
 class MapView(tk.Tk,object):
 
     # 创建一个空的有向图

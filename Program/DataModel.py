@@ -12,8 +12,17 @@ matplotlib.rcParams['font.sans-serif'] = ['SimHei'] #font.sans-serif参数来指
 matplotlib.rcParams['axes.unicode_minus'] = False	#axes.unicode_minus参数用于显示负号
 
 row_space = 1.54  #排间距
-to_second_Floor = 3.15                      #1楼换层到2楼的高度
-to_third_Floor = 2.55                       #2楼换层到3楼的高度
+to_second_Floor = 3.15                        #1楼换层到2楼的高度
+to_third_Floor = 2.55                         #2楼换层到3楼的高度
+Acc_car = 0.3;                                #四向车加速度
+Dec_car = 0.3;                                #四向车减速度
+Max_speed_car = 1.2;                          #四向车最大速度
+Switching_time = 4;                           #换向时间
+Acc_lift = 0.15;                              #提升机加速度
+Dec_lift = 0.15;                              #提升机减速度
+Max_speed_lift = 1.4;                         #提升机最大速度
+
+
 enter_point = [51,348,636,925,1110,1620]    #入口点
 out_point = [445,820,971,1156]  #出口点
 fist_connect_point = [642,1116,674,1148]        #1楼提升机接驳点
@@ -22,8 +31,8 @@ third_connect_point = [3899,4135]               #3楼接驳点
 connect_points = [642,1116,674,1148,2374,2844,2406,2876,3899,4135]#所有接驳点
 #1501、1540定位空托盘出口点  暂时不考虑空托盘入口点，定位货位点！
 pallet_out = [1501,1540]
-# file_path = '../Resource/WMSGraph_11_6.xlsx'
 file_path = '../Resource/WMSGraph_12_9.xlsx'
+'''读取文件并创建地图'''
 class Model:
     def __init__(self):
         self.combined_graph = nx.Graph()
@@ -217,7 +226,7 @@ class Model:
                     # 创建节点属性字典
                     node_attr = {
                         'id': i,
-                        'status': s,    # -1表示通道，0表示货位
+                        'status': s,    # -1表示通道，0表示货位,1表示占用
                         'dimension': d  # 节点货位的尺寸类型
                     }
                     # 根据状态设置节点颜色
@@ -273,13 +282,13 @@ class Model:
                         #     location[neighbor] = (location[current_node][0], round(location[current_node][1] - weight_value,2))
                         #之前在dts中定义的排-列-层
                         if pos[neighbor][0] > pos[current_node][0]:#判断排，向下
-                            location[neighbor] = (current_node_row , current_node_column + weight_value)
+                            location[neighbor] = (current_node_row ,round(current_node_column + weight_value,2))
                         elif pos[neighbor][0] < pos[current_node][0]:#判断排，向上
-                            location[neighbor] = (current_node_row , current_node_column - weight_value)
+                            location[neighbor] = (current_node_row , round(current_node_column - weight_value,2))
                         elif pos[neighbor][1] > pos[current_node][1]:#判断列，向右
-                            location[neighbor] = (current_node_row  + weight_value, current_node_column)
+                            location[neighbor] = (round(current_node_row  + weight_value,2), current_node_column)
                         elif pos[neighbor][1] < pos[current_node][1]:#判断列，向左
-                            location[neighbor] = (current_node_row - weight_value, current_node_column)
+                            location[neighbor] = (round(current_node_row  - weight_value,2), current_node_column)
                         else:
                             print(f"节点{neighbor}位置错误！pos：{pos[neighbor]}")
                             continue
@@ -297,7 +306,6 @@ class Model:
             return None
 
     def read_firstFloor(self):
-        file_path = '../Resource/map_data2.xlsx'
         try:
             start_time = time.time()
             usecols = [0, 1, 2, 3]  # 读取Excel文件中第一部分序号、ID、状态、类型四列数据
@@ -415,7 +423,6 @@ def main():
 
 if __name__ == '__main__':
     main()
-
 
 Status = {0: "空闲", 1: "忙碌", 2: "故障"}
 class Vehicle:

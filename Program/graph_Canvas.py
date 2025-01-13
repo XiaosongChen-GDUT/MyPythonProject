@@ -14,6 +14,7 @@ import numpy as np
 import time
 import os
 #继承自FigureCanvas的类  嵌入PYQT5窗口中的地图的画布
+'''地图的画布创建与更新方法'''
 class graph_FigureCanvas(FigureCanvas):
     def __init__(self,floor = None,title = None, parent=None, width=15, height=5, dpi=100):
         self.floor = floor

@@ -3,6 +3,7 @@ import simpy
 from Program.DataModel import Model
 from Program.MapView import MapView
 from Program.DataModel import Vehicle
+'''后续暂时没有用到这个类'''
 class Control(object):
     def __init__(self,Env):
         # , model, view
