@@ -328,6 +328,7 @@ class Ui_MainWindow(object):
         self.heuristic_ComboBox.addItem("")
         self.heuristic_ComboBox.addItem("")
         self.heuristic_ComboBox.addItem("")
+        self.heuristic_ComboBox.addItem("")
         self.gridLayout.addWidget(self.heuristic_ComboBox, 5, 1, 1, 1)
         self.add_case = QtWidgets.QPushButton(self.test_path_planing)
         font = QtGui.QFont()
@@ -500,12 +501,13 @@ class Ui_MainWindow(object):
         self.point_algorithm_comboBox.setItemText(1, _translate("MainWindow", "Astar"))
         self.point_algorithm_comboBox.setItemText(2, _translate("MainWindow", "ATL_star"))
         self.point_algorithm_comboBox.setItemText(3, _translate("MainWindow", "self_Astar"))
-        self.point_algorithm_comboBox.setItemText(4, _translate("MainWindow", "direction_Astar"))
+        self.point_algorithm_comboBox.setItemText(4, _translate("MainWindow", "weight_ATL_star"))
         self.heuristic_Qlable.setText(_translate("MainWindow", "启发函数"))
         self.heuristic_ComboBox.setCurrentText(_translate("MainWindow", "欧几里得"))
         self.heuristic_ComboBox.setItemText(0, _translate("MainWindow", "欧几里得"))
         self.heuristic_ComboBox.setItemText(1, _translate("MainWindow", "曼哈顿"))
         self.heuristic_ComboBox.setItemText(2, _translate("MainWindow", "切比雪夫"))
+        self.heuristic_ComboBox.setItemText(3, _translate("MainWindow", "平方欧几里得"))
         self.add_case.setText(_translate("MainWindow", "测试案例"))
         self.menu.setTitle(_translate("MainWindow", "文件"))
         self.open.setText(_translate("MainWindow", "open"))
@@ -527,7 +529,8 @@ class Ui_MainWindow(object):
             algorithm_results = {}  # 存储每个算法的结果
             # 获取当前日期和时间
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            algorithm_results = self.path_planing.test_ATL_star(floor, source, target, heuristic_index)
+            # algorithm_results = self.path_planing.test_ATL_star(floor, source, target, heuristic_index)
+            algorithm_results = self.path_planing.test_All_Nodes(floor, source, target, heuristic_index)
             # algorithm_count = self.point_algorithm_comboBox.count()         # 获取算法数量
             # for i in range(algorithm_count):                                # 遍历算法
             #     algorithm_name = self.point_algorithm_comboBox.itemText(i)
@@ -553,7 +556,7 @@ class Ui_MainWindow(object):
             self.dialog = ResultsDialog(algorithm_results)
             self.textBrowser.append(f"{current_time} - 对比测试案例：起点{source}, 终点{target}。\n")
             for algorithm_name, result in algorithm_results.items():
-                self.textBrowser.append(f'{algorithm_name} - 最短距离：{result["cost"]}, 耗时：{result["take_time"]}秒， 转向次数：{result["turn_count"]},探索节点数：{result["explored"]}。\n')
+                self.textBrowser.append(f'{algorithm_name} - 最短距离：{result["cost"]}, 耗时：{result["take_time"]}毫秒， 转向次数：{result["turn_count"]},探索节点数：{result["explored"]}。\n')
         except Exception as e:
             self.textBrowser.append(f"{current_time} - 对比测试案例失败: {e}\n")  # 错误处理，输出失败原因
 
@@ -572,13 +575,13 @@ class Ui_MainWindow(object):
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
             take_time, path, explored, cost, turn_count = self.path_planing.Analyze_Path(floor, source, target, algorithm_index, heuristic_index)  # 运行路径算法
-            # canvas.show_visited_process(floor,explored)
-            canvas.show_visited_process_slowly(floor, explored)  # 显示探索过程
+            canvas.show_visited_process(floor,explored)
+            # canvas.show_visited_process_slowly(floor, explored)  # 显示探索过程
             canvas.show_path(floor,path,algorithm_index)    # 显示路径
             log_message = (f"{current_time} - 路径算法测试案例：起点{source}, "
                            f"终点{target}, 算法：{algorithm_name},启发函数：{heristic_name}, "
                            # f"路径：{path}，"
-                           f"最短距离：{cost}, 耗时：{take_time}秒， 转向次数：{turn_count},探索节点数：{len(explored)}。\n")
+                           f"最短距离：{cost}, 耗时：{take_time}毫秒， 转向次数：{turn_count},探索节点数：{len(explored)}。\n")
                 #将日志信息输出到文本框
             # canvas.save_image(source, target, algorithm_name,heristic_name)  # 保存图片
             self.textBrowser.append(log_message)

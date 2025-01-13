@@ -11,8 +11,17 @@ from matplotlib.animation import FuncAnimation
 matplotlib.rcParams['font.sans-serif'] = ['SimHei'] #font.sans-serif参数来指定"SimHei"字体
 matplotlib.rcParams['axes.unicode_minus'] = False	#axes.unicode_minus参数用于显示负号
 
-to_second_Floor = 3.15#1楼换层到2楼的高度
-to_third_Floor = 2.55#2楼换层到3楼的高度
+row_space = 1.54  #排间距
+to_second_Floor = 3.15                      #1楼换层到2楼的高度
+to_third_Floor = 2.55                       #2楼换层到3楼的高度
+enter_point = [51,348,636,925,1110,1620]    #入口点
+out_point = [445,820,971,1156]  #出口点
+fist_connect_point = [642,1116,674,1148]        #1楼提升机接驳点
+second_connect_point = [2374,2844,2406,2876]    #2楼接驳点
+third_connect_point = [3899,4135]               #3楼接驳点
+connect_points = [642,1116,674,1148,2374,2844,2406,2876,3899,4135]#所有接驳点
+#1501、1540定位空托盘出口点  暂时不考虑空托盘入口点，定位货位点！
+pallet_out = [1501,1540]
 # file_path = '../Resource/WMSGraph_11_6.xlsx'
 file_path = '../Resource/WMSGraph_12_9.xlsx'
 class Model:
@@ -34,16 +43,18 @@ class Model:
         floor2 = self.read_map(data, 2)
         floor3 = self.read_map(data, 3)
         self.combined_graph = nx.compose_all([floor1, floor2, floor3])
-        enter_point = [51,348,636,925,1110,1620]
-        out_point = [445,820,971,1156]
-        #1501、1540定位托盘出口点
 
         #1楼提升机接驳点
         first_node_A =  self.get_Node_BY_Attribute(floor1, 'pos',(14,10,1))#642
         first_node_B =  self.get_Node_BY_Attribute(floor1, 'pos',(24,10,1))#1116
         first_node_C =  self.get_Node_BY_Attribute(floor1, 'pos',(14,42,1))#674
         first_node_D =  self.get_Node_BY_Attribute(floor1, 'pos',(24,42,1))#1148
+        #添加地图属性
         floor1.graph['connect_point']= [first_node_A, first_node_B, first_node_C, first_node_D]
+        floor1.graph['enter_point'] = enter_point
+        floor1.graph['out_point'] = out_point
+
+        # floor1.graph['pallet_out'] = pallet_out
         #2楼接驳点
         second_node_A =  self.get_Node_BY_Attribute(floor2, 'pos',(14,10,2))#2374
         second_node_B =  self.get_Node_BY_Attribute(floor2, 'pos',(24,10,2))#2844
@@ -64,6 +75,8 @@ class Model:
         self.combined_graph.add_edge(second_node_B, third_node_B,weight=to_third_Floor)
 
         return self.combined_graph, floor1, floor2, floor3
+
+    def draw_3D_map(self, combined_graph, title='三维地图'):#绘制三维地图
         # 合并地图属性
         # self.combined_graph.graph['pos'] = {**floor1.graph['pos'], **floor2.graph['pos'], **floor3.graph['pos']}#解包操作符 **。这个操作符使得能够将多个字典中的键值对合并为一个新的字典。
         # self.combined_graph.graph['node_colors']={**floor1.graph['node_colors'], **floor2.graph['node_colors'], **floor3.graph['node_colors']}
@@ -71,8 +84,7 @@ class Model:
         # self.combined_graph.graph['id']={**floor1.graph['id'], **floor2.graph['id'], **floor3.graph['id']}
         # self.combined_graph.graph['status']={**floor1.graph['status'], **floor2.graph['status'], **floor3.graph['status']}
         # self.combined_graph.graph['dimension']={**floor1.graph['dimension'], **floor2.graph['dimension'], **floor3.graph['dimension']}
-        #连接换层点
-    def draw_3D_map(self,combined_graph,title='三维地图'):
+        #连接换层点_graph,title='三维地图'):
         pos = nx.get_node_attributes(combined_graph, 'pos')  # 假设节点位置包含在节点属性 'pos' 中
         colors = nx.get_node_attributes(combined_graph, 'node_colors')  # 假设节点颜色包含在节点属性 'node_colors' 中
         # print(colors)
@@ -165,9 +177,11 @@ class Model:
     def read_map(self,Data,layer):#读取单层地图数据
         floor = nx.Graph()#创建无向图
         node_colors = {}  # 用于存储节点颜色
+        node_markers = {}  # 用于存储节点标记
         pos = {}  # 用于存储节点位置
         nodes_data = []  # 用于存储节点数据
-        start_colum = 0#起点列
+        roadway_count = 0  # 巷道计数
+        freight_count = 0  # 货位计数
         location = {}  # 存储节点在画布中的位置
         start_time = time.time()
         if layer == 1:
@@ -208,9 +222,23 @@ class Model:
                     }
                     # 根据状态设置节点颜色
                     if s == -1:
-                        node_colors[n] = '#FFFF00' #'#BDAF00' #'yellow'  # 通道用黄色显示
+                        if n in enter_point:#入口点
+                            node_colors[n] = 'lightgreen'
+                            node_markers[n] = 's' # 正方形
+                        elif n in out_point:#出口点
+                            node_colors[n] = 'darkorange'
+                            node_markers[n] = 's'
+                        elif n in connect_points:#提升机接驳点
+                            node_colors[n] = 'darkorange'
+                            node_markers[n] = 'D' # 菱形
+                        else:
+                            node_colors[n] = '#FFFF00' #'#BDAF00' #'yellow'  # 通道用黄色显示
+                            node_markers[n] = 'o' # 圆形
+                            roadway_count += 1
                     else:
-                        node_colors[n] = 'lightblue'  # 货位用蓝色显示
+                        node_colors[n] = 'lightblue'  # 货位用蓝色、圆形显示
+                        node_markers[n] = 'o' # 圆形
+                        freight_count += 1
                     nodes_data.append((n, node_attr))    # 节点属性字典加入列表
             else:
                 print(f"第{layer}层地图数据len(num) ={len(num)} "
@@ -224,6 +252,7 @@ class Model:
             # 添加节点在画布中的位置
             start_node = min(floor.nodes())#获取起点
             location[start_node] = (0, 0)  # 画布起点位置，默认坐标设为 (0, 0)
+            # location[start_node] = (0, 100)  # 画布起点位置，默认坐标设为 (0, 0)
             queue = deque([start_node])#将起点加入队列
             while queue:
                 current_node = queue.popleft()#弹出队首元素
@@ -231,22 +260,35 @@ class Model:
                     if neighbor not in location:#邻居不在location中
                         queue.append(neighbor)#将邻居加入队列
                         weight_value = round(floor[current_node][neighbor]['weight'], 2)#获取边的权重
-                        if pos[neighbor][0] > pos[current_node][0]:#判断X轴方向
-                            location[neighbor] = (round(location[current_node][0] + weight_value, 2), location[current_node][1])
-                        elif pos[neighbor][0] < pos[current_node][0]:#判断X轴方向
-                            location[neighbor] = (round(location[current_node][0] - weight_value,2), location[current_node][1])
-                        elif pos[neighbor][1] > pos[current_node][1]:#判断Y轴方向
-                            location[neighbor] = (location[current_node][0],round(location[current_node][1] + weight_value,2))
-                        elif pos[neighbor][1] < pos[current_node][1]:#判断Y轴方向
-                            location[neighbor] = (location[current_node][0], round(location[current_node][1] - weight_value,2))
+                        current_node_row =  round(location[current_node][0], 2) # 当前节点的 排 坐标
+                        current_node_column =  round(location[current_node][1], 2) # 当前节点的 列 坐标
+
+                        # if pos[neighbor][0] > pos[current_node][0]:#判断X轴方向
+                        #     location[neighbor] = (round(location[current_node][0] + weight_value, 2), location[current_node][1])
+                        # elif pos[neighbor][0] < pos[current_node][0]:#判断X轴方向
+                        #     location[neighbor] = (round(location[current_node][0] - weight_value,2), location[current_node][1])
+                        # elif pos[neighbor][1] > pos[current_node][1]:#判断Y轴方向
+                        #     location[neighbor] = (location[current_node][0],round(location[current_node][1] + weight_value,2))
+                        # elif pos[neighbor][1] < pos[current_node][1]:#判断Y轴方向
+                        #     location[neighbor] = (location[current_node][0], round(location[current_node][1] - weight_value,2))
+                        #之前在dts中定义的排-列-层
+                        if pos[neighbor][0] > pos[current_node][0]:#判断排，向下
+                            location[neighbor] = (current_node_row , current_node_column + weight_value)
+                        elif pos[neighbor][0] < pos[current_node][0]:#判断排，向上
+                            location[neighbor] = (current_node_row , current_node_column - weight_value)
+                        elif pos[neighbor][1] > pos[current_node][1]:#判断列，向右
+                            location[neighbor] = (current_node_row  + weight_value, current_node_column)
+                        elif pos[neighbor][1] < pos[current_node][1]:#判断列，向左
+                            location[neighbor] = (current_node_row - weight_value, current_node_column)
                         else:
                             print(f"节点{neighbor}位置错误！pos：{pos[neighbor]}")
                             continue
             nx.set_node_attributes(floor, location, 'location')#将location加入图的属性中
             nx.set_node_attributes(floor, pos,'pos')
             nx.set_node_attributes(floor, node_colors,'node_colors')
+            nx.set_node_attributes(floor, node_markers,'node_markers')
             end_time = time.time()
-            print(f"读取第{layer}层地图数据耗时：{end_time-start_time}秒")
+            print(f"读取第{layer}层地图数据耗时：{end_time-start_time}秒, 巷道数：{roadway_count}, 货位数：{freight_count}")
             return floor
         except FileNotFoundError:
                 print(f"文件 {self.file_path} 未找到。")
