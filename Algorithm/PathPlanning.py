@@ -4,6 +4,7 @@ import networkx as nx
 from Program.DataModel import Model
 from heapq import heappop, heappush
 from itertools import count  # count object for the heap堆的计数对象
+import random
 import math
 import time
 
@@ -22,24 +23,19 @@ class Path_Planning:
         self.first_floor = canvasList[0].floor
         self.second_floor = canvasList[1].floor
         self.third_floor = canvasList[2].floor
-
-        self.first_landmarks_index = lanmarks_1+lanmarks_2 + lanmarks_3 + lanmarks_4 # 组合所有地标点的索引
-        # first_location = nx.get_node_attributes(self.first_floor, 'location')
+        # 组合所有地标点的索引
+        # self.first_landmarks_index = lanmarks_1+lanmarks_2 + lanmarks_3 + lanmarks_4  # 地标点的索引
+        self.first_landmarks_index =  lanmarks_4  # 地标点的索引
         # 地标点的坐标
-        # self.first_landmarks_location = {node: first_location[node] for node in self.first_landmarks_index}
         self.first_landmarks = {}  # 初始化字典
         # # 计算每个地标点到每个节点的距离
         for index in self.first_landmarks_index:
             self.first_landmarks[index] = {}
                 # 计算当前节点到地标的距离
-                # distance = math.hypot(loc[0] - self.first_landmarks_location[index][0], loc[1] - self.first_landmarks_location[index][1])
-                # distance = abs(loc[0] - self.first_landmarks_location[index][0])+ abs(loc[1] - self.first_landmarks_location[index][1])
             distance = nx.shortest_path_length(self.first_floor,source=index,weight='weight')   #返回的是字典
-                # 将结果存储在字典中，使用 (node, id) 作为键来唯一标识
-                # self.first_landmarks[index][node] = distance
             self.first_landmarks[index] = distance
 
-
+    '''take_time, path, explored, cost, turn_count'''
     def run(self, graph, source, target, algorithm_index=None, heuristic_index=None):
         try:
             weight='weight'
@@ -48,136 +44,289 @@ class Path_Planning:
             elif algorithm_index == 1:# A*算法
                 return self.A_star(graph, source, target, heuristic_index, weight)
             elif algorithm_index == 2:# ATL_star
-                return self.ATL_star(graph, source, target, heuristic_index, lanmarks_3,weight)
+                return self.ATL_star(graph, source, target, heuristic_index, lanmarks_4,weight)
             elif algorithm_index == 3:#改进的A*算法
                 return self.improve_A_star(graph, source, target, heuristic_index, weight)
             elif algorithm_index == 4:# 方向A*
-                return self.direction_Astar(graph, source, target, heuristic_index, weight)
+                # return self.direction_Astar(graph, source, target, heuristic_index, weight)
+                return self.weight_ATL_star(graph, source, target, heuristic_index, lanmarks_4,weight)
             else:
                 raise ValueError("class-> Path_Planning -> run : algorithm must be Dijkstra or A*!")
         except ValueError as ve:
             print(f"ValueError: {ve}")
 
+    '''遍历完节点的实验'''
+    def test_All_Nodes(self,graph,source,target,heuristic_index=2,weight='weight'):
+        V = 1.2 #平均速度
+        t = 4   #换向时间
+        nodes = list(graph.nodes)
+        # source = random.choice(nodes)  # 随机选择源节点
+        source = 51 # 随机选择源节点
+        nodes.remove(source)  # 去掉源节点
+        # 随机选择200个目标节点
+        # targets = random.sample(nodes, 10)
+        sources = [51,348,925,1110,1620]
+        targets = [26,323,50,1399,1727,1748]
+        algorithm_results = {}  # 存储每个算法的结果
+        # 初始化累计变量
+        # 定义算法名称和对应的函数
+        algorithms = {
+            "Dijkstra": self.Dijkstra,
+            "A_star": self.A_star,
+            "improve_A_star": self.improve_A_star,
+            # "ATL_star": self.ATL_star,
+            "weight_ATL_star": self.weight_ATL_star
+        }
+        # for algorithm in algorithms:
+        #     algorithm_results[algorithm] = {
+        #         'take_time': 0,      # 累计耗时
+        #         'explored': 0,       # 累计探索节点数
+        #         'cost': 0,           # 累计成本
+        #         'turn_count': 0      # 累计转向次数
+        #     }
+        for algorithm in algorithms:
+            algorithm_results[algorithm] = {
+                'take_time': [],      # 累计耗时
+                'explored': [],       # 累计探索节点数
+                'cost': [],           # 累计成本
+                'turn_count': []      # 累计转向次数
+            }
+        for source in sources:
+            for target in targets:
+                # 遍历每个算法
+                for algo_name, algo_func in algorithms.items():
+                    # print(f"正在测试算法：{algo_name}，源节点：{source}，目标节点：{target}")
+                    time_start = time.time()
+                # 调用算法函数
+                    if algo_name == "Dijkstra":
+                        path, cost, explored = self.Dijkstra(graph, source, target, weight)
+                    elif algo_name == "A_star":
+                        path, cost, explored = self.A_star(graph, source, target, heuristic_index, weight)
+                    elif algo_name == "improve_A_star":
+                        path, cost, explored = self.improve_A_star(graph, source, target, heuristic_index, weight)
+                    # elif algo_name == "ATL_star":
+                    #     path, cost, explored = self.ATL_star(graph, source, target, heuristic_index, lanmarks_4, weight)
+                    elif algo_name == "weight_ATL_star":
+                        path, cost, explored = self.weight_ATL_star(graph, source, target, heuristic_index, lanmarks_4, weight)
+                    else:
+                        raise ValueError("class-> Path_Planning -> test_All_Nodes : algorithm must be Dijkstra or A*!")
+
+                    take_time = round((time.time() - time_start) * 1000, 3)  # 耗时
+                    turn_count = self.Turn_Count(graph, path)  # 转向次数
+
+                    # 更新结果
+                    # algorithm_results[algo_name]['take_time'] += take_time
+                    # algorithm_results[algo_name]['explored'] += len(explored)
+                    # algorithm_results[algo_name]['cost'] += cost
+                    # algorithm_results[algo_name]['turn_count'] += turn_count# 更新结果
+                    algorithm_results[algo_name]['take_time'].append(take_time)
+                    algorithm_results[algo_name]['explored'].append(len(explored))
+                    algorithm_results[algo_name]['cost'].append(cost)
+                    algorithm_results[algo_name]['turn_count'].append(turn_count)
+
+        return algorithm_results
+
     """对比测试不同的地标点的数量、位置"""
     def test_ATL_star(self, graph, source, target, heuristic_index=2, weight='weight'):
         canvas =  graph.graph['canvas']
-        targets = [26,50,323,1399,1727,1748]  # 测试目标点
+        # targets = [26,50,323,1399,1727,1748]  # 测试目标点
+        nums = 200  # 测试目标点数量
+        targets = random.sample(list(graph.nodes), nums)  # 随机选择不重复的目标点
+        source = random.choice(list(graph.nodes))  # 随机选择源节点
         algorithm_results = {}  # 存储每个算法的结果
 
-        start_time = time.time()
-        path, cost, explored=self.ATL_star(graph, source, target, heuristic_index, lanmarks_1,weight)
-        take_time = time.time() - start_time
-        turn_count = self.Turn_Count(graph,path)
-        # 存储结果
+        path_cost = 0  # 路径长度
+        take_time = 0  # 耗时
+        turn_count = 0  # 转弯次数
+        explored_count = 0  # 探索节点数
+        for target in targets:
+            start_time = time.time()
+            path, cost, explored=self.ATL_star(graph, source, target, heuristic_index, lanmarks_1,weight)
+            take_time += round((time.time() - start_time)*1000,2)
+            path_cost += cost
+            turn_count += self.Turn_Count(graph,path)
+            explored_count += len(explored)
+
+            # 存储结果
         algorithm_results["lanmarks_1"] = {
             'take_time': take_time,
-            'explored': len(explored),
-            'cost': cost,
+            'explored': explored_count,
+            'cost': path_cost,
             'turn_count': turn_count
-        }
-        canvas.show_visited_process(graph, explored)    #显示探索过的节点
-        canvas.show_path_with_color(graph, path,color='pink',name='lanmarks_1')  # 显示路径
-        canvas.save_image(source, target, "ATL_star", "lanmarks_1")
-        canvas.reset_canvas()  # 重置画布
 
-        start_time = time.time()
-        path, cost, explored=self.ATL_star(graph, source, target, heuristic_index, lanmarks_2,weight)
-        take_time = time.time() - start_time
-        turn_count = self.Turn_Count(graph,path)
+            # 'take_time': take_time/nums,
+            # 'explored': explored_count/nums,
+            # 'cost': path_cost/nums,
+            # 'turn_count': turn_count/nums
+        }
+        # canvas.show_visited_process(graph, explored)    #显示探索过的节点
+        # canvas.show_path_with_color(graph, path,color='pink',name='lanmarks_1')  # 显示路径
+        # canvas.save_image(source, target, "ATL_star", "lanmarks_1")
+        # canvas.reset_canvas()  # 重置画布
+
+        path_cost = 0  # 路径长度
+        take_time = 0  # 耗时
+        turn_count = 0  # 转弯次数
+        explored_count = 0  # 探索节点数
+        for target in targets:
+            start_time = time.time()
+            path, cost, explored=self.ATL_star(graph, source, target, heuristic_index, lanmarks_2,weight)
+            take_time += round((time.time() - start_time)*1000,2)
+            path_cost += cost
+            turn_count += self.Turn_Count(graph,path)
+            explored_count += len(explored)
         # 存储结果
         algorithm_results["lanmarks_2"] = {
             'take_time': take_time,
-            'explored': len(explored),
-            'cost': cost,
+            'explored': explored_count,
+            'cost': path_cost,
             'turn_count': turn_count
+            # 'take_time': take_time/nums,
+            # 'explored': explored_count/nums,
+            # 'cost': path_cost/nums,
+            # 'turn_count': turn_count/nums
         }
-        canvas.show_visited_process(graph, explored)    #显示探索过的节点
-        canvas.show_path_with_color(graph, path,color='brown',name='lanmarks_2')  # 显示路径
-        canvas.save_image(source, target, "ATL_star", "lanmarks_2")
-        canvas.reset_canvas()  # 重置画布
+        # canvas.show_visited_process(graph, explored)    #显示探索过的节点
+        # canvas.show_path_with_color(graph, path,color='brown',name='lanmarks_2')  # 显示路径
+        # canvas.save_image(source, target, "ATL_star", "lanmarks_2")
+        # canvas.reset_canvas()  # 重置画布
 
-        start_time = time.time()
-        path, cost ,explored=self.ATL_star(graph, source, target, heuristic_index, lanmarks_3,weight)
-        take_time = time.time() - start_time
-        turn_count = self.Turn_Count(graph,path)
+        path_cost = 0  # 路径长度
+        take_time = 0  # 耗时
+        turn_count = 0  # 转弯次数
+        explored_count = 0  # 探索节点数
+        for target in targets:
+            start_time = time.time()
+            path, cost ,explored=self.ATL_star(graph, source, target, heuristic_index, lanmarks_3,weight)
+            take_time += round((time.time() - start_time)*1000,2)
+            path_cost += cost
+            turn_count += self.Turn_Count(graph,path)
+            explored_count += len(explored)
         # 存储结果
         algorithm_results["lanmarks_3"] = {
             'take_time': take_time,
-            'explored': len(explored),
-            'cost': cost,
+            'explored': explored_count,
+            'cost': path_cost,
             'turn_count': turn_count
+            # 'take_time': take_time/nums,
+            # 'explored': explored_count/nums,
+            # 'cost': path_cost/nums,
+            # 'turn_count': turn_count/nums
         }
-        canvas.show_visited_process(graph, explored)    #显示探索过的节点
-        canvas.show_path_with_color(graph, path,color='purple',name='lanmarks_3')  # 显示路径
-        canvas.save_image(source, target, "ATL_star", "lanmarks_3")
-        canvas.reset_canvas()  # 重置画布
+        # canvas.show_visited_process(graph, explored)    #显示探索过的节点
+        # canvas.show_path_with_color(graph, path,color='purple',name='lanmarks_3')  # 显示路径
+        # canvas.save_image(source, target, "ATL_star", "lanmarks_3")
+        # canvas.reset_canvas()  # 重置画布
 
-        start_time = time.time()
-        path, cost ,explored=self.ATL_star(graph, source, target, heuristic_index, lanmarks_4,weight)
-        take_time = time.time() - start_time
-        turn_count = self.Turn_Count(graph,path)
+        path_cost = 0  # 路径长度
+        take_time = 0  # 耗时
+        turn_count = 0  # 转弯次数
+        explored_count = 0  # 探索节点数
+        for target in targets:
+            start_time = time.time()
+            path, cost ,explored=self.ATL_star(graph, source, target, heuristic_index, lanmarks_4,weight)
+            take_time += round((time.time() - start_time)*1000,2)
+            path_cost += cost
+            turn_count += self.Turn_Count(graph,path)
+            explored_count += len(explored)
         # 存储结果
         algorithm_results["lanmarks_4"] = {
             'take_time': take_time,
-            'explored': len(explored),
-            'cost': cost,
+            'explored': explored_count,
+            'cost': path_cost,
             'turn_count': turn_count
+            # 'take_time': take_time/nums,
+            # 'explored': explored_count/nums,
+            # 'cost': path_cost/nums,
+            # 'turn_count': turn_count/nums
         }
-        canvas.show_visited_process(graph, explored)    #显示探索过的节点
-        canvas.show_path_with_color(graph, path,color='black',name='lanmarks_4')  # 显示路径
-        canvas.save_image(source, target, "ATL_star", "lanmarks_4")
-        canvas.reset_canvas()  # 重置画布
+        # canvas.show_visited_process(graph, explored)    #显示探索过的节点
+        # canvas.show_path_with_color(graph, path,color='black',name='lanmarks_4')  # 显示路径
+        # canvas.save_image(source, target, "ATL_star", "lanmarks_4")
+        # canvas.reset_canvas()  # 重置画布
 
-        start_time = time.time()
-        path, cost, explored=self.A_star(graph, source, target, heuristic_index,weight)
-        take_time = time.time() - start_time
-        turn_count = self.Turn_Count(graph,path)
+        path_cost = 0  # 路径长度
+        take_time = 0  # 耗时
+        turn_count = 0  # 转弯次数
+        explored_count = 0  # 探索节点数
+        for target in targets:
+            start_time = time.time()
+            path, cost, explored=self.A_star(graph, source, target, heuristic_index,weight)
+            take_time += round((time.time() - start_time)*1000,2)
+            path_cost += cost
+            turn_count += self.Turn_Count(graph,path)
+            explored_count += len(explored)
         # 存储结果
         algorithm_results["A_star"] = {
             'take_time': take_time,
-            'explored': len(explored),
-            'cost': cost,
+            'explored': explored_count,
+            'cost': path_cost,
             'turn_count': turn_count
+            # 'take_time': take_time/nums,
+            # 'explored': explored_count/nums,
+            # 'cost': path_cost/nums,
+            # 'turn_count': turn_count/nums
         }
-        canvas.show_visited_process(graph, explored)    #显示探索过的节点
-        canvas.show_path_with_color(graph, path,"green",name='A_star')  # 显示路径
-        canvas.save_image(source, target, "A_star", "曼哈顿距离")
-        canvas.reset_canvas()  # 重置画布
+        # canvas.show_visited_process(graph, explored)    #显示探索过的节点
+        # canvas.show_path_with_color(graph, path,"green",name='A_star')  # 显示路径
+        # canvas.save_image(source, target, "A_star", "曼哈顿距离")
+        # canvas.reset_canvas()  # 重置画布
 
-        start_time = time.time()
-        path, cost, explored=self.improve_A_star(graph, source, target, heuristic_index,weight)
-        take_time = time.time() - start_time
-        turn_count = self.Turn_Count(graph,path)
-        # 存储结果
-        algorithm_results["improve_A_star"] = {
-            'take_time': take_time,
-            'explored': len(explored),
-            'cost': cost,
-            'turn_count': turn_count
-        }
-        canvas.show_visited_process(graph, explored)    #显示探索过的节点
-        canvas.show_path_with_color(graph, path,color='orange',name='improve_A_star')  # 显示路径
-        canvas.save_image(source, target, "improve_A_star", "曼哈顿距离")
-        canvas.reset_canvas()  # 重置画布
+        # path_cost = 0  # 路径长度
+        # take_time = 0  # 耗时
+        # turn_count = 0  # 转弯次数
+        # explored_count = 0  # 探索节点数
+        # for target in targets:
+        #     start_time = time.time()
+        #     path, cost, explored=self.improve_A_star(graph, source, target, heuristic_index,weight)
+        #     take_time += round((time.time() - start_time)*1000,2)
+        #     path_cost += cost
+        #     turn_count += self.Turn_Count(graph,path)
+        #     explored_count += len(explored)
+        # # 存储结果
+        # algorithm_results["improve_A_star"] = {
+        #     'take_time': take_time,
+        #     'explored': explored_count,
+        #     'cost': path_cost,
+        #     'turn_count': turn_count
+        #     # 'take_time': take_time/nums,
+        #     # 'explored': explored_count/nums,
+        #     # 'cost': path_cost/nums,
+        #     # 'turn_count': turn_count/nums
+        # }
+        # canvas.show_visited_process(graph, explored)    #显示探索过的节点
+        # canvas.show_path_with_color(graph, path,color='orange',name='improve_A_star')  # 显示路径
+        # canvas.save_image(source, target, "improve_A_star", "曼哈顿距离")
+        # canvas.reset_canvas()  # 重置画布
 
-        start_time = time.time()
-        path, cost, explored=self.Dijkstra(graph, source, target,weight)
-        take_time = time.time() - start_time
-        turn_count = self.Turn_Count(graph,path)
-        # 存储结果
-        algorithm_results["Dijkstra"] = {
-            'take_time': take_time,
-            'explored': len(explored),
-            'cost': cost,
-            'turn_count': turn_count
-        }
-        canvas.show_visited_process(graph, explored)    #显示探索过的节点
-        canvas.show_path_with_color(graph, path,color='blue',name='Dijkstra算法')  # 显示路径
-        canvas.save_image(source, target, "dijkstra算法", "")
-        canvas.reset_canvas()  # 重置画布
+        # path_cost = 0  # 路径长度
+        # take_time = 0  # 耗时
+        # turn_count = 0  # 转弯次数
+        # explored_count = 0  # 探索节点数
+        # for target in targets:
+        #     start_time = time.time()
+        #     path, cost, explored=self.Dijkstra(graph, source, target,weight)
+        #     take_time += round((time.time() - start_time)*1000,2)
+        #     path_cost += cost
+        #     turn_count += self.Turn_Count(graph,path)
+        #     explored_count += len(explored)
+        # # 存储结果
+        # algorithm_results["Dijkstra"] = {
+        #     'take_time': take_time,
+        #     'explored': explored_count,
+        #     'cost': path_cost,
+        #     'turn_count': turn_count
+        #     # 'take_time': take_time/nums,
+        #     # 'explored': explored_count/nums,
+        #     # 'cost': path_cost/nums,
+        #     # 'turn_count': turn_count/nums
+        # }
+
+        # canvas.show_visited_process(graph, explored)    #显示探索过的节点
+        # canvas.show_path_with_color(graph, path,color='blue',name='Dijkstra算法')  # 显示路径
+        # canvas.save_image(source, target, "dijkstra算法", "")
+        # canvas.reset_canvas()  # 重置画布
         return algorithm_results
-
-
 
     ## 返回路径，路径长度，探索过的节点
     def A_star(self,graph, source, target, heuristic_index=None, weight='weight'):
@@ -186,10 +335,13 @@ class Path_Planning:
         # 以画布中的绝对位置作为启发式预估参数
         if heuristic_index == 0:#欧几里得距离作为启发式函数:两点间的最短直线距离
             heuristic = lambda u, v: math.hypot(location[v][0] - location[u][0], location[v][1] - location[u][1])
+            # heuristic = lambda u, v: (location[v][0] - location[u][0])**2 + (location[v][1] - location[u][1])**2
         elif heuristic_index == 1:#曼哈顿距离作为启发式函数:横纵坐标绝对值之和
             heuristic = lambda u, v:  abs(location[v][0] - location[u][0]) +  abs(location[v][1] - location[u][1])
         elif heuristic_index == 2:#切比雪夫距离作为启发式函数：各座标数值差的最大值。适用于走斜线
             heuristic = lambda u, v: max((location[v][0] - location[u][0]), abs(location[v][1] - location[u][1]))
+        elif heuristic_index == 3:#平方欧几里得作为启发式函数：两点间的最短直线距离的平方
+            heuristic = lambda u, v: (location[v][0] - location[u][0])**2 + (location[v][1] - location[u][1])**2
         else:
             heuristic = 0   # The default heuristic is h=0 - same as Dijkstra's algorithm
 
@@ -212,7 +364,7 @@ class Path_Planning:
                     path.append(node)
                     node = explored[node]
                 path.reverse()
-                return path, nx.path_weight(graph, path, weight) , explored
+                return path, round(nx.path_weight(graph, path, weight),2) , explored
             if curnode in explored:         # 已经探索过？
                 if explored[curnode] is None:  # 父节点是None,说明是源节点，跳过
                     continue
@@ -238,11 +390,66 @@ class Path_Planning:
                 push(queue, (ncost + h, next(c), neighbor, ncost, curnode))
         raise nx.NetworkXNoPath(f"Node {target} not reachable from {source}")
 
+    '''测试动态权重'''
+    def weight_ATL_star(self,graph, source, target, heuristic_index=None,landmarks=None, weight='weight'):
+        location = nx.get_node_attributes(graph, 'location')
+        # alpha = 1  # g(n)实际成本函数的权重
+        beta = 1.4 #1.2  # h(n)预估函数的权重
+        push = heappush    # push function for the heap堆的Push函数
+        pop = heappop     # pop function for the heap堆的Pop函数
+        weight_function = _weight_function(graph, weight)  # weight function for the graph
+        G_succ = graph._adj  # 用于存储图中每个节点的邻接信息{1: {2: {'weight': 1.5}}, 2: {1: {'weight': 1.5}, 3: {'weight': 1.5}}, 3: {2: {'weight': 1.5}}}
+        c = count()  # 计数器，用于生成唯一的ID
+        queue = [(0, next(c), source, 0 ,None)]  # 队列，元素为元组(节点的总代价，ID，当前节点，到当前节点成本，父节点)
+        enqueued = {}  # 记录节点是否已经入队，记录到达节点的距离  和 节点到目标节点启发式评估值
+        explored = {}  # 记录节点是否已经探索过
+        # 动态权重计算.起点到目标节点的预估距离
+        D = self.ATL_heuristic(source, target,heuristic_index ,location, landmarks)
+        while queue:
+            # 弹出队列中代价最小的元素
+            # 元组(节点的总代价，ID，当前节点，到当前节点成本，父节点)
+            _, __, curnode, dist, parent = pop(queue)
+            if curnode == target:
+                path = [curnode]
+                node = parent
+                while node is not None:
+                    path.append(node)
+                    node = explored[node]
+                path.reverse()
+                return path, round(nx.path_weight(graph, path, weight),2) , explored
+            if curnode in explored:         # 已经探索过？
+                if explored[curnode] is None:  # 父节点是None,说明是源节点，跳过
+                    continue
+                # 之前的距离和本次的距离比较谁优
+                qcost, h = enqueued[curnode]
+                if qcost <= dist:  # 之前的距离更优，跳过
+                    continue
+            explored[curnode] = parent  # 标记为已经探索过
+            # 遍历当前节点的邻居节点
+            for neighbor, datas in G_succ[curnode].items():
+                # 计算从当前节点到邻居节点的距离
+                cost = weight_function(curnode, neighbor, datas)
+                if cost is None:
+                    continue
+                # ncost = dist + cost     # 到邻居节点的成本
+                turn_cost = self.Turn_Cost(location,parent,neighbor,target)  # 引入拐点成本
+                ncost = dist + cost + turn_cost    # 到邻居节点的成本
+                if neighbor in enqueued:
+                    qcost, h = enqueued[neighbor]
+                    if qcost <= ncost:  # 之前的距离更优，跳过
+                        continue
+                else:               # 当前距离更优，更新队列
+                    h = self.ATL_heuristic(neighbor, target,heuristic_index ,location, landmarks)
+                # beta = 1 + h/D # 动态权重计算  从2-1进行调整
+                h = h * beta # 动态权重计算
+                enqueued[neighbor] = (ncost, h)
+                push(queue, ( ncost + h, next(c), neighbor, ncost, curnode))
+        raise nx.NetworkXNoPath(f"Node {target} not reachable from {source}")
+
     def ATL_star(self,graph, source, target, heuristic_index=None,landmarks=None, weight='weight'):
         location = nx.get_node_attributes(graph, 'location')
         alpha = 1  # g(n)实际成本函数的权重
-        beta = 1.2  # h(n)预估函数的权重
-        # path = nx.astar_path(graph, source=source, target=target, heuristic=heuristic, weight=weight)
+        beta = 1.2 #1.2  # h(n)预估函数的权重
         # cost = nx.path_weight(graph, path, weight)
         push = heappush    # push function for the heap堆的Push函数
         pop = heappop     # pop function for the heap堆的Pop函数
@@ -263,7 +470,7 @@ class Path_Planning:
                     path.append(node)
                     node = explored[node]
                 path.reverse()
-                return path, nx.path_weight(graph, path, weight) , explored
+                return path, round(nx.path_weight(graph, path, weight),2) , explored
             if curnode in explored:         # 已经探索过？
                 if explored[curnode] is None:  # 父节点是None,说明是源节点，跳过
                     continue
@@ -288,35 +495,39 @@ class Path_Planning:
                 else:               # 当前距离更优，更新队列
                     h = self.ATL_heuristic(neighbor, target,heuristic_index ,location, landmarks)
                 #方向成本
-                # direction_cost = self.Direction_Cost(location,source,parent,curnode,neighbor,target)
-                # h = h + direction_cost  #加上方向成本后，遍历的节点会未加方向成本更多
+                h = h * beta # 权重
                 enqueued[neighbor] = (ncost, h)
-                # print("A:", curnode, "Z:", neighbor,"COST:", cost, "lower_bound:", h)
-                push(queue, (alpha * ncost + beta * h, next(c), neighbor, ncost, curnode))
+                push(queue, (alpha * ncost + h, next(c), neighbor, ncost, curnode))
         raise nx.NetworkXNoPath(f"Node {target} not reachable from {source}")
 
     '''差分启发式函数'''
-    def ATL_heuristic(self, A, Z, heuristic_index, location,landmarks = None):
+    def ATL_heuristic(self, neighbor, target, heuristic_index, location,landmarks = None):
         # # 以画布中的绝对位置作为启发式预估参数
         if heuristic_index == 0:#欧几里得距离作为启发式函数:两点间的最短直线距离
-            heuristic = math.hypot(location[Z][0] - location[A][0], location[Z][1] - location[A][1])
+            heuristic = math.hypot(location[target][0] - location[neighbor][0], location[target][1] - location[neighbor][1])
         elif heuristic_index == 1:#曼哈顿距离作为启发式函数:横纵坐标绝对值之和
-            heuristic = abs(location[Z][0] - location[A][0]) +  abs(location[Z][1] - location[A][1])
+            heuristic = abs(location[target][0] - location[neighbor][0]) +  abs(location[target][1] - location[neighbor][1])
         elif heuristic_index == 2:#切比雪夫距离作为启发式函数：各座标数值差的最大值。适用于走斜线
-            heuristic = max((location[Z][0] - location[A][0]), abs(location[Z][1] - location[A][1]))
+            heuristic = max((location[target][0] - location[neighbor][0]), abs(location[target][1] - location[neighbor][1]))
+        elif heuristic_index == 3:#平方欧几里得作为启发式函数：两点间的最短直线距离的平方
+            heuristic = (location[target][0] - location[neighbor][0])**2 + (location[target][1] - location[neighbor][1])**2
         else:
             heuristic = 0   # The default heuristic is h=0 - same as Dijkstra's algorithm
-        # ATL距离启发式函数, A为起点，Z为终点，landmarks为地标点集合，location为节点坐标集合
+        if landmarks is None:
+            return heuristic
+        heuristic = 0
+        # ATL距离启发式函数, A为起点，target为终点，landmarks为地标点集合，location为节点坐标集合
         for L in landmarks:
-            # lower_bound = abs(self.first_landmarks[L][Z] - self.first_landmarks[L][A])
-            lower_bound = self.first_landmarks[L][Z] - self.first_landmarks[L][A]
+            # lower_bound = abs(self.first_landmarks[L][target] - self.first_landmarks[L][neighbor])
+            lower_bound = self.first_landmarks[L][target] - self.first_landmarks[L][neighbor]
             if lower_bound - heuristic > 0.001 :
-                # print("A:", A, "Z:", Z ,"lower_bound:", lower_bound, "h:", heuristic)
+                # print("A:", A, "target:", Z ,"lower_bound:", lower_bound, "h:", heuristic)
                 heuristic = lower_bound
+        # print("manhattan_distance:",manhattan_distance,"heuristic:",heuristic)
         return heuristic
 
 
-
+    '''引入权重1.5，拐点成本'''
     ## 返回路径，路径长度，探索过的节点
     def improve_A_star(self, graph, source, target, heuristic_index, weight='weight'):
         try:
@@ -330,9 +541,11 @@ class Path_Planning:
                 heuristic = lambda u, v: abs(location[v][0] - location[u][0]) + abs(location[v][1] - location[u][1])
             elif heuristic_index == 2:#切比雪夫距离作为启发式函数：各座标数值差的最大值。适用于走斜线
                 heuristic = lambda u, v: max((location[v][0] - location[u][0]), abs(location[v][1] - location[u][1]))
+            elif heuristic_index == 3:#平方欧几里得作为启发式函数：两点间的最短直线距离的平方
+                heuristic = lambda u, v: (location[v][0] - location[u][0])**2 + (location[v][1] - location[u][1])**2
             else:
                 heuristic = None
-
+            D = heuristic(source, target)
             push = heappush    # push function for the heap堆的Push函数
             pop = heappop     # pop function for the heap堆的Pop函数
             weight_function = _weight_function(graph, weight)  # weight function for the graph
@@ -352,7 +565,7 @@ class Path_Planning:
                         path.append(node)           # 反向构建路径
                         node = explored[node]       # 回溯父节点
                     path.reverse()                  # 反转路径
-                    return path, nx.path_weight(graph, path, weight), explored  # 返回路径，路径长度，探索过的节点
+                    return path, round(nx.path_weight(graph, path, weight),2), explored  # 返回路径，路径长度，探索过的节点
                 if current_node in explored:        # 2.已经探索过，跳过
                     if explored[current_node] is None:  # 已经探索过，但父节点为None，说明是源节点，跳过
                         continue
@@ -375,8 +588,9 @@ class Path_Planning:
                             continue
                     else:# 5.邻居节点没有入队
                         h = heuristic(neighbor, target)  # 计算邻居节点到目标节点的启发式评估值
+                    h =  beta * h
                     enqueued[neighbor] = (ncost, h)      # 记录起点到邻居节点的距离ncost和邻居节点到目标节点的启发式评估值h
-                    push(queue, (alpha * ncost + beta * h, next(c), neighbor, ncost, current_node))  # 6.入队，并更新队列
+                    push(queue, (alpha * ncost + h, next(c), neighbor, ncost, current_node))  # 6.入队，并更新队列
                     # f = ncost + h 为A*算法的评估值，用于判断节点的优先级，使得算法更加贪婪，更加关注距离短的节点
             raise nx.NetworkXNoPath("No path between %s and %s." % (source, target))  # 6.找不到路径，抛出异常
         except Exception as e:
@@ -386,7 +600,7 @@ class Path_Planning:
     def direction_Astar(self, graph, source, target, heuristic_index, weight='weight'):
         try:
             alpha = 1  # g(n)实际函数的权重
-            beta = 1  # h(n)预估函数的权重
+            beta = 1.5  # h(n)预估函数的权重
             location = nx.get_node_attributes(graph, 'location')
             # 以画布中的绝对位置作为启发式预估函数参数
             if heuristic_index == 0:#欧几里得距离作为启发式函数:两点间的最短直线距离
@@ -395,6 +609,8 @@ class Path_Planning:
                 heuristic = lambda u, v: abs(location[v][0] - location[u][0]) + abs(location[v][1] - location[u][1])
             elif heuristic_index == 2:#切比雪夫距离作为启发式函数：各座标数值差的最大值。适用于走斜线
                 heuristic = lambda u, v: max((location[v][0] - location[u][0]), abs(location[v][1] - location[u][1]))
+            elif heuristic_index == 3:#平方欧几里得作为启发式函数：两点间的最短直线距离的平方
+                heuristic = lambda u, v: (location[v][0] - location[u][0])**2 + (location[v][1] - location[u][1])**2
             else:
                 heuristic = None
 
@@ -485,7 +701,7 @@ class Path_Planning:
                 continue  # already searched this node.
             dist[v] = d
             if v == target:
-                return paths[v], dist[v], dist.keys()            # 找到目标节点，返回路径长度和路径
+                return paths[v], round(dist[v],2), list(dist.keys())            # 找到目标节点，返回路径长度和路径
                 # break
             for u, e in G_succ[v].items():      # 遍历当前节点的邻居节点
                 cost = weight_function(v, u, e)          # 计算当前节点到邻居节点的距离
@@ -520,7 +736,7 @@ class Path_Planning:
 
     # 判断是否出现垂直
     def Turn_Cost(self,location,parent,next_node,target):
-        turn_cost = 1.5  # 普通节点转向代价  权重在1的时候，拐点数量还是较多
+        turn_cost = 1.3#1.5  # 普通节点转向代价  权重在1的时候，拐点数量还是较多
         target_turn_cost = 0.5  # 目标节点转向代价
         if parent is None or next_node is None or target is None:   #起始父节点是None，说明是源节点，跳过
             # print("参数错误")
@@ -569,32 +785,36 @@ class Path_Planning:
         turn_count = 0  # 初始化转向计数
         start_time = time.time()
         path, cost, explored = self.run(graph, source, target, algorithm_index, heuristic_index)
-        take_time = time.time() - start_time
+        take_time = round( (time.time() - start_time)*1000,2)  # 计算运行时间
         if cost == 0 or path is None:
             return take_time, path, cost, turn_count  # 路径不存在，返回0
         turn_count = self.Turn_Count(graph, path)  # 计算转向次数
-
         return take_time, path, explored, cost, turn_count
 
+    '''累计转向次数'''
     def Turn_Count(self,graph, path):
+        # 设定一个阈值，假设阈值为某个常量，例如 1.0
+        threshold = 1.0
         turn_count = 0
         location = nx.get_node_attributes(graph, 'location')
         # cost = nx.path_weight(graph, path, 'weight')
         # 遍历路径列表，从第一个点开始，直到倒数第三个点
         for i in range(1, len(path) - 1):
             parent = path[i - 1]      # 前一个节点
-            current_node = path[i]    # 当前节点
+            # current_node = path[i]    # 当前节点
             next_node = path[i + 1]   # 下一个节点
             parent_pos = location[parent]
-            current_pos = location[current_node]
+            # current_pos = location[current_node]
             next_pos = location[next_node]
+            # (x1, y1) = (round(current_pos[0] - parent_pos[0], 2), round(current_pos[1] - parent_pos[1], 2))  # 当前节点到父节点的向量
+            # (x2, y2) = (round(next_pos[0] - current_pos[0], 2), round(next_pos[1] - current_pos[1], 2))  # 当前节点到下一个节点的向量
+            # result = int(x1 * y2 - x2 * y1)  # 计算叉乘，判断是否在同一直线上
+            # if result != 0:  # 判断是否在同一直线上,不等于0，说明不在同一直线上，发生转向
+            #     turn_count += 1
+            #     print(f"发生转向: x1={x1},y1={y1},x2={x2},y2={y2},result={result}")
             # 计算在 x 和 y 轴上的偏差
             delta_x = abs(parent_pos[0] - next_pos[0])  # x轴偏差
             delta_y = abs(parent_pos[1] - next_pos[1])  # y轴偏差
-
-            # 设定一个阈值，假设阈值为某个常量，例如 1.0
-            threshold = 1.0
-
             # 判断是否在 x 和 y 轴上都超过阈值
             if delta_x > threshold and delta_y > threshold:
                 # print(f"发生转向: parent_pos={parent_pos}, next_pos={next_pos},delta_x={delta_x},delta_y={delta_y}")
