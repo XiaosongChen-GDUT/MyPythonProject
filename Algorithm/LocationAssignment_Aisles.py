@@ -32,9 +32,10 @@ fist_connect_point = [642, 1116, 674, 1148]  # 1楼提升机接驳点
 second_connect_point = [2374, 2844, 2406, 2876]  # 2楼接驳点
 third_connect_point = [3899, 4135]  # 3楼接驳点
 
-class LocationAssignment(ea.Problem):
+class LocationAssignment_Aisles(ea.Problem):
     def __init__(self):
         '''
+        根据货道进行编解码
         1.设置数据模型set_model
         2.设置路径算法对象path_planning
         3.设置相关性矩阵
@@ -43,6 +44,13 @@ class LocationAssignment(ea.Problem):
         3.运行算法
         
         待入库货物数据：
+            sku：编号
+            入库节点：ID
+            质量：质量
+            周转率：周转率
+            规格：规格
+            数量：数量
+
             货物（托盘)：ID,
             'enter_node'(入库节点)：ID,
             'rate': rate,
@@ -61,6 +69,7 @@ class LocationAssignment(ea.Problem):
 
         self.history_Loc = {}   # 历史货物
         self.pending_Loc = {}  # 待入库货物
+        self.asiles = {}  # 货道
         #初始化相关性矩阵
         self.correlation_matrix = None
         #历史货物层信息：计算相关性用
@@ -86,10 +95,7 @@ class LocationAssignment(ea.Problem):
         if self.TopoGraph is None:
             warnings.warn("No TopoGraph，cannot init problem!", RuntimeWarning)
             return
-        # # 预计算 历史货物的质量矩,历史货物的总质量
-        # self.history_z_moment, self.history_total_mass = self._precompute_history()
-        # # 预计算历史周转率分布
-        # self.history_rates = self._precompute_history_rates()
+
         # 图中节点的状态：-1-储货点，0-空闲，1-占用
         self.status = nx.get_node_attributes(self.TopoGraph, 'status')
         # 空闲货位集合
@@ -534,6 +540,8 @@ class LocationAssignment(ea.Problem):
         self.location = nx.get_node_attributes(self.TopoGraph, 'location')
         # 图中节点的三维坐标
         self.pos = nx.get_node_attributes(self.TopoGraph, 'pos')
+        # 货道
+        self.asiles = model.aisles
         # 初始化换层节点
         self.cross_nodes = {1: fist_connect_point, 2: second_connect_point,
                             3: third_connect_point}  # dict_values([[642, 1116, 674, 1148], [2374, 2844, 2406, 2876], [3899, 4135]])
@@ -557,49 +565,50 @@ if __name__ == '__main__':
     # 读取数据
     model = Model()
     path_planning = Path_Planning(model)
-    loc = LocationAssignment()              # 初始化问题对象
+    loc = LocationAssignment_Aisles()              # 初始化问题对象
     loc.set_model(model)                    # 设置模型对象
     loc.set_path_planning(path_planning)    # 设置路径规划对象
     correlation = loc._generate_relatedness_matrix(10)  # 生成模拟的货物相关性矩阵（0~1，1表示完全相关）
     test_items = loc.generateItems(10)      # 生成待入库货物信息
     # print(correlation)                    # 打印相关性矩阵
     # print(test_items)                     # 打印待入库货物信息
-
-    '''========================初始化问题================'''
-    problem = loc.initProblem()  # 初始化问题
-
-    '''========================种群设置================'''
-    Encoding = 'RI'  # 编码方式: 'BG'表示采用二进制/格雷编码，'RI'表示采用离散/整数编码;'P' 排列编码，即染色体每一位的元素都是互异的
-    NIND = 100 # 种群规模
-    Field = ea.crtfld(Encoding, loc.varTypes, loc.ranges, loc.borders) #译码矩阵 创建区域描述器
-    population = ea.Population(Encoding, Field, NIND) # 实例化种群对象（此时种群还没被真正初始化，仅仅是生成一个种群对象）
-    """===========================算法参数设置=========================="""
-    #实例化一个算法模板对象
-    algorithm = ea.moea_NSGA2_templet(loc, population)
-    algorithm.MAXGEN = 1000        # 最大进化代数
-    algorithm.mutOper.CR = 0.2     # 修改变异算子的变异概率
-    algorithm.recOper.XOVR = 0.9   # 修改交叉算子的交叉概率
-    algorithm.logTras = 1          # 设置每隔多少代记录日志，若设置成0则表示不记录日志
-    algorithm.verbose = True       # 设置是否打印输出日志信息
-    algorithm.drawing = 1          # 设置绘图方式（0：不绘图；1：绘制结果图；2：绘制目标空间过程动画；3：绘制决策空间过程动画）
-    """==========================调用算法模板进行种群进化==============="""
-    '''调用run执行算法模板，得到帕累托最优解集NDSet以及最后一代种群。
-    NDSet是一个种群类Population的对象。
-    NDSet.ObjV为最优解个体的目标函数值；NDSet.Phen为对应的决策变量值。'''
-    [NDSet, population] = algorithm.run() #执行算法模板，得到非支配种群以及最后一代种群
-    NDSet.save() # 把非支配种群的信息保存到文件中
-
-    """=================================输出结果======================="""
-    print('用时：%s 秒' % algorithm.passTime)
-    print('非支配个体数：%d 个' % NDSet.sizes) if NDSet.sizes != 0 else print('没有找到可行解！')
-    if algorithm.log is not None and NDSet.sizes != 0:
-        print('GD', algorithm.log['gd'][-1])
-        print('IGD', algorithm.log['igd'][-1])
-        print('HV', algorithm.log['hv'][-1])
-        print('Spacing', algorithm.log['spacing'][-1])
-    """======================进化过程指标追踪分析=================="""
-    metricName = [['igd'], ['hv']]
-    Metrics = np.array([algorithm.log[metricName[i][0]] for i in
-                        range(len(metricName))]).T
-    # 绘制指标追踪分析图
-    ea.trcplot(Metrics, labels=metricName, titles=metricName)
+    # aisles = model.combined_graph.graph['aisles']
+    print(loc.asiles)
+    # '''========================初始化问题================'''
+    # problem = loc.initProblem()  # 初始化问题
+    #
+    # '''========================种群设置================'''
+    # Encoding = 'RI'  # 编码方式: 'BG'表示采用二进制/格雷编码，'RI'表示采用离散/整数编码;'P' 排列编码，即染色体每一位的元素都是互异的
+    # NIND = 100 # 种群规模
+    # Field = ea.crtfld(Encoding, loc.varTypes, loc.ranges, loc.borders) #译码矩阵 创建区域描述器
+    # population = ea.Population(Encoding, Field, NIND) # 实例化种群对象（此时种群还没被真正初始化，仅仅是生成一个种群对象）
+    # """===========================算法参数设置=========================="""
+    # #实例化一个算法模板对象
+    # algorithm = ea.moea_NSGA2_templet(loc, population)
+    # algorithm.MAXGEN = 1000        # 最大进化代数
+    # algorithm.mutOper.CR = 0.2     # 修改变异算子的变异概率
+    # algorithm.recOper.XOVR = 0.9   # 修改交叉算子的交叉概率
+    # algorithm.logTras = 1          # 设置每隔多少代记录日志，若设置成0则表示不记录日志
+    # algorithm.verbose = True       # 设置是否打印输出日志信息
+    # algorithm.drawing = 1          # 设置绘图方式（0：不绘图；1：绘制结果图；2：绘制目标空间过程动画；3：绘制决策空间过程动画）
+    # """==========================调用算法模板进行种群进化==============="""
+    # '''调用run执行算法模板，得到帕累托最优解集NDSet以及最后一代种群。
+    # NDSet是一个种群类Population的对象。
+    # NDSet.ObjV为最优解个体的目标函数值；NDSet.Phen为对应的决策变量值。'''
+    # [NDSet, population] = algorithm.run() #执行算法模板，得到非支配种群以及最后一代种群
+    # NDSet.save() # 把非支配种群的信息保存到文件中
+    #
+    # """=================================输出结果======================="""
+    # print('用时：%s 秒' % algorithm.passTime)
+    # print('非支配个体数：%d 个' % NDSet.sizes) if NDSet.sizes != 0 else print('没有找到可行解！')
+    # if algorithm.log is not None and NDSet.sizes != 0:
+    #     print('GD', algorithm.log['gd'][-1])
+    #     print('IGD', algorithm.log['igd'][-1])
+    #     print('HV', algorithm.log['hv'][-1])
+    #     print('Spacing', algorithm.log['spacing'][-1])
+    # """======================进化过程指标追踪分析=================="""
+    # metricName = [['igd'], ['hv']]
+    # Metrics = np.array([algorithm.log[metricName[i][0]] for i in
+    #                     range(len(metricName))]).T
+    # # 绘制指标追踪分析图
+    # ea.trcplot(Metrics, labels=metricName, titles=metricName)

@@ -26,7 +26,8 @@ class Ui_MainWindow(object):
         #画布集合
         self.floor_Canvas_list = [self.first_floor_canvas, self.second_floor_canvas, self.third_floor_canvas, self.combined_floor_canvas]
         #寻路算法
-        self.path_planing = Path_Planning(self.floor_Canvas_list)
+        # self.path_planing = Path_Planning(self.floor_Canvas_list)
+        self.path_planing = Path_Planning(self.model)
 
         # MainWindow.setMinimumHeight(900)
         # MainWindow.setMinimumWidth(1500)
@@ -501,7 +502,7 @@ class Ui_MainWindow(object):
         self.point_algorithm_comboBox.setItemText(0, _translate("MainWindow", "Dijkstra"))
         self.point_algorithm_comboBox.setItemText(1, _translate("MainWindow", "Astar"))
         self.point_algorithm_comboBox.setItemText(2, _translate("MainWindow", "ATL_star"))
-        self.point_algorithm_comboBox.setItemText(3, _translate("MainWindow", "self_Astar"))
+        self.point_algorithm_comboBox.setItemText(3, _translate("MainWindow", "improve_Astar"))
         self.point_algorithm_comboBox.setItemText(4, _translate("MainWindow", "weight_ATL_star"))
         self.heuristic_Qlable.setText(_translate("MainWindow", "启发函数"))
         self.heuristic_ComboBox.setCurrentText(_translate("MainWindow", "欧几里得"))
@@ -564,7 +565,8 @@ class Ui_MainWindow(object):
     #测试路径算法的触发函数
     def handle_add_case_button(self):
         try:
-            floor = self.maps[self.tabWidget.currentIndex()]         # 获取当前地图
+            # floor = self.maps[self.tabWidget.currentIndex()]         # 获取当前地图
+            floor = self.maps[3]    #整个地图
             canvas = self.floor_Canvas_list[self.tabWidget.currentIndex()]  # 获取当前地图的canvas
             source = self.source_spinBox.value()
             target = self.target_spinBox.value()
@@ -579,10 +581,13 @@ class Ui_MainWindow(object):
             canvas.show_visited_process(floor,explored)
             # canvas.show_visited_process_slowly(floor, explored)  # 显示探索过程
             canvas.show_path(floor,path,algorithm_index)    # 显示路径
+            #计算路径时间
+            path_time = self.path_planing.cal_path_time(floor,path)
             log_message = (f"{current_time} - 路径算法测试案例：起点{source}, "
                            f"终点{target}, 算法：{algorithm_name},启发函数：{heristic_name}, "
                            # f"路径：{path}，"
-                           f"最短距离：{cost}, 耗时：{take_time}毫秒， 转向次数：{turn_count},探索节点数：{len(explored)}。\n")
+                           f"最短距离：{cost}, 耗时：{take_time}毫秒， 转向次数：{turn_count},"
+                           f"探索节点数：{len(explored)},路径时间：{0}秒。\n")
                 #将日志信息输出到文本框
             # canvas.save_image(source, target, algorithm_name,heristic_name)  # 保存图片
             self.textBrowser.append(log_message)

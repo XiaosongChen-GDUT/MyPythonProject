@@ -49,12 +49,7 @@ class Control(object):
 def main():
     env = simpy.Environment()
     model = Model()
-    #读取地图数据
-    DG,pos,node_colors = model.read_map()
-    control = Control(env)#初始化控制类
-    view = MapView(DG,pos,node_colors,env, control)
 
-    view.mainloop()
 
 if __name__ == '__main__':
     main()

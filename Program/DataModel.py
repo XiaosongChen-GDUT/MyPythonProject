@@ -38,14 +38,18 @@ class Model:
         self.combined_graph = nx.Graph()
         #读取数据并创建地图
         self.combined_graph, self.floor1, self.floor2, self.floor3=self.create_Combined_Graph()
+        #货道字典
+        self.aisles = self.analyze_storage_aisles(self.combined_graph)
+        # nx.set_node_attributes(self.combined_graph, aisles, 'aisles')
+        # self.combined_graph.graph['aisles'] = aisles
         #添加地图属性
         self.combined_graph.graph['members']=[self.floor1, self.floor2, self.floor3]
 
     def findPath(self, start, end):
         path = nx.dijkstra_path(self.combined_graph, start, end)
         return path
-
     def create_Combined_Graph(self):#创建合并的地图
+        '''添加接驳点'''
         #读取数据并创建地图
         data = pd.read_excel(file_path)
         floor1 = self.read_map(data, 1)
@@ -86,14 +90,6 @@ class Model:
         return self.combined_graph, floor1, floor2, floor3
 
     def draw_3D_map(self, combined_graph, title='三维地图'):#绘制三维地图
-        # 合并地图属性
-        # self.combined_graph.graph['pos'] = {**floor1.graph['pos'], **floor2.graph['pos'], **floor3.graph['pos']}#解包操作符 **。这个操作符使得能够将多个字典中的键值对合并为一个新的字典。
-        # self.combined_graph.graph['node_colors']={**floor1.graph['node_colors'], **floor2.graph['node_colors'], **floor3.graph['node_colors']}
-        # self.combined_graph.graph['location']={**floor1.graph['location'], **floor2.graph['location'], **floor3.graph['location']}
-        # self.combined_graph.graph['id']={**floor1.graph['id'], **floor2.graph['id'], **floor3.graph['id']}
-        # self.combined_graph.graph['status']={**floor1.graph['status'], **floor2.graph['status'], **floor3.graph['status']}
-        # self.combined_graph.graph['dimension']={**floor1.graph['dimension'], **floor2.graph['dimension'], **floor3.graph['dimension']}
-        #连接换层点_graph,title='三维地图'):
         pos = nx.get_node_attributes(combined_graph, 'pos')  # 假设节点位置包含在节点属性 'pos' 中
         colors = nx.get_node_attributes(combined_graph, 'node_colors')  # 假设节点颜色包含在节点属性 'node_colors' 中
         # print(colors)
@@ -280,6 +276,7 @@ class Model:
                         #     location[neighbor] = (location[current_node][0],round(location[current_node][1] + weight_value,2))
                         # elif pos[neighbor][1] < pos[current_node][1]:#判断Y轴方向
                         #     location[neighbor] = (location[current_node][0], round(location[current_node][1] - weight_value,2))
+
                         #之前在dts中定义的排-列-层
                         if pos[neighbor][0] > pos[current_node][0]:#判断排，向下
                             location[neighbor] = (current_node_row ,round(current_node_column + weight_value,2))
@@ -297,13 +294,119 @@ class Model:
             nx.set_node_attributes(floor, node_colors,'node_colors')
             nx.set_node_attributes(floor, node_markers,'node_markers')
             end_time = time.time()
-            print(f"读取第{layer}层地图数据耗时：{end_time-start_time}秒, 巷道数：{roadway_count}, 货位数：{freight_count}")
+            print(f"读取第{layer}层地图数据耗时：{end_time-start_time}秒, 车道节点数：{roadway_count}, 货位数：{freight_count}")
             return floor
         except FileNotFoundError:
                 print(f"文件 {self.file_path} 未找到。")
         except Exception as e:
             print(f"读取第{layer}层地图数据时发生错误!: {e}")
             return None
+
+    def analyze_storage_aisles(self,floor):
+        """
+        分析储货巷道类型（栈式或双向队列），并返回货道信息
+        :param floor: 已构建的地图图结构（包含节点属性）
+        :return: 货道字典 {aisle_id: {type, nodes, row,start_col,end_col,capacity}}
+        """
+        pos = nx.get_node_attributes(floor, 'pos')       # 排-列-层
+        status = nx.get_node_attributes(floor,'status')  # 节点状态
+        nodes = floor.nodes()
+        layer_dict = {}  # 用于存储各层节点列表
+        for node in nodes:
+            layer = pos[node][2]
+            if layer not in layer_dict:         # 新层
+                layer_dict[layer] = []
+            layer_dict[layer].append(node)      # 加入该层节点列表
+        # for layer, nodes in layer_dict.items():
+        #     print(f"第{layer}层节点：\n{nodes}")
+
+        aisle_counter = 1  # 用于生成货道编号
+        continuous_freight_groups = {}  # 存储货道id，连续货位组合节点组合{}
+        # 分析各层节点的连续节点组合
+        for layer, nodes in layer_dict.items():
+            # 按列(col)和行(row)排序节点
+            nodes_sorted = sorted(
+                nodes,
+                key=lambda x: ( pos[x][0], pos[x][1])  # 先按层排序，再按列递增，再按行排序
+            )
+            row_dict = {}  # 用于存储各行节点列表
+            for i in range(len(nodes_sorted)):
+                node = nodes_sorted[i]
+                row = pos[node][0]
+                if row not in row_dict:         # 新行
+                    row_dict[row] = []
+                row_dict[row].append(node)      # 加入该行节点列表
+            # print(f"row_dict:{row_dict}")
+
+            for row, nodes in row_dict.items():
+                continuous_group = []
+                for node in nodes:          # 遍历每行节点列表
+                    # layer = pos[node][2]
+                    if status[node] == 0:
+                        continuous_group.append(node)
+                    else:                     # 遇到非status=0节点，则把当前连续节点组合加入字典
+                        if continuous_group:
+                            aisle_id = aisle_counter
+                            start_col = pos[continuous_group[0]][1]
+                            end_col = pos[continuous_group[-1]][1]
+                            capacity = len(continuous_group)
+                            # 货道左侧邻居节点、右侧的邻居节点
+                            start_neighbors = floor.neighbors(continuous_group[0])
+                            end_neighbors = floor.neighbors(continuous_group[-1])
+                            # 判断是否有邻居节点为货道
+                            left_has_aisle = any(status[n] == -1 and pos[n][0] == row and pos[n][1] < start_col for n in start_neighbors)
+                            right_has_aisle = any(status[n] == -1 and pos[n][0] == row and pos[n][1] > end_col for n in end_neighbors)
+                            aisle_type = 'queue' if left_has_aisle and right_has_aisle else 'stack'
+
+                            continuous_freight_groups[aisle_id] = {
+                                'type': aisle_type,  # 这里需要根据实际情况确定类型
+                                'nodes': continuous_group,
+                                'row': row,
+                                'start_col': start_col,
+                                'end_col': end_col,
+                                'capacity': capacity,
+                                'layer': layer
+                            }
+                            aisle_counter += 1  # 生成新的货道编号
+                            continuous_group = []  # 重置连续组
+
+                # 如果一行以status=0的节点结束，需要把最后一个连续组加入
+                if continuous_group:
+                    # if row not in continuous_freight_groups:
+                    #     continuous_freight_groups[row] = []
+                    # continuous_freight_groups[row].append(continuous_group)
+                    aisle_id = aisle_counter
+                    start_col = pos[continuous_group[0]][1]
+                    end_col = pos[continuous_group[-1]][1]
+                    capacity = len(continuous_group)
+                    # 货道左侧邻居节点、右侧的邻居节点
+                    start_neighbors = floor.neighbors(continuous_group[0])
+                    end_neighbors = floor.neighbors(continuous_group[-1])
+                    # 判断是否有邻居节点为货道
+                    left_has_aisle = any(status[n] == -1 and pos[n][0] == row and pos[n][1] < start_col for n in start_neighbors)
+                    right_has_aisle = any(status[n] == -1 and pos[n][0] == row and pos[n][1] > end_col for n in end_neighbors)
+                    aisle_type = 'queue' if left_has_aisle and right_has_aisle else 'stack'
+
+                    continuous_freight_groups[aisle_id] = {
+                        'type': aisle_type,  # 这里需要根据实际情况确定类型
+                        'nodes': continuous_group,
+                        'row': row,
+                        'start_col': start_col,
+                        'end_col': end_col,
+                        'capacity': capacity,
+                        'layer': layer
+                    }
+                    aisle_counter += 1  # 生成新的货道编号
+        # count = 0  #总货位数
+        # # 打印结果
+        # for row, groups in continuous_freight_groups.items():
+        #     count += groups['capacity']
+        #     print(f"货道id：{row} 连续货位组合:{groups}")
+        # print(f" 总货位数：   {count}")
+        return continuous_freight_groups
+
+
+
 
     def read_firstFloor(self):
         try:
@@ -407,16 +510,11 @@ def main():
     dm = Model()
     combined_graph, floor1, floor2, floor3=dm.combined_graph, dm.floor1, dm.floor2, dm.floor3
     # 绘制所有楼层地图
-    dm.draw_floors([floor1, floor2, floor3], ["Floor 1", "Floor 2", "Floor 3"])
+    # dm.draw_floors([floor1, floor2, floor3], ["Floor 1", "Floor 2", "Floor 3"])
 
-    # 假设给定的路径
-    # path = [i for i in range(1, 25)]  # 示例路径节点ID，实际根据需求调整
-    # # 动态更新节点与边的颜色
-    # for node in path:
-    #     dm.update_colors(floor1, [node])  # 每次只更新当前节点的颜色
-    #绘制3维地图
-    # dm.draw_3D_map(combined_graph)
-    # # 绘制每一层地图
+    # dm.analyze_storage_aisles(floor1)
+    # dm.analyze_storage_aisles(floor2)
+    # dm.analyze_storage_aisles(floor3)
     # dm.draw_floor(floor1, "Floor 1")
     # dm.draw_floor(floor2, "Floor 2")
     # dm.draw_floor(floor3, "Floor 3")
@@ -491,21 +589,6 @@ class Vehicle:
         print("AGV已到达终点。")
 
 
-class Elevator:
-    def __init__(self, ID, elavator_position ,initial_floor, Env):
-        self.ID = ID  # 电梯ID
-        self.elavator_position = elavator_position  # 电梯位置
-        self.current_floor = initial_floor  # 电梯当前楼层
-        self.env = Env  # 环境
-        self.current_status = 0  # 电梯当前状态 0-空闲 1-忙碌 2-故障
-        self.max_speed = 1      # 电梯最大速度
-        self.acceleration = 1   # 电梯加速度
-        self.current_speed = 0  # 电梯当前速度
-        self.wait_time = 1      # 电梯等待时间
-
-        self.load_status = 0  # 电梯载重状态 0-空 1-满
-        self.load_direction = 0  # 电梯载重方向 0-上 1-下
-        self.Task_list = []  # 电梯载重列表
 
 
 
