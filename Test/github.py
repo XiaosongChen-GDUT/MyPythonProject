@@ -1,73 +1,153 @@
-# -*- coding: utf-8 -*-
-"""MyProblem.py"""
+import os
+from concurrent.futures import ProcessPoolExecutor, as_completed  # 确保导入正确的as_completed
+
+import numpy as np
+import warnings
+from collections import defaultdict
+from concurrent.futures import ProcessPoolExecutor
+from tqdm import tqdm  # 可选：进度条
+from scipy.sparse import dok_matrix
+from Program.DataModel import Model
+from Algorithm.PathPlanning import Path_Planning
 import numpy as np
 import geatpy as ea
+from NSGA2.FS5.FS5_Individual import Individual
+import random
+import pickle
+import networkx as nx
+enter_node = [51, 348, 636, 925, 1110, 1620]# 入口点
+from NSGA2.FS4.FS4_Individual import Individual
+from NSGA2.FS4.FS4_Population import Population
+from NSGA2.FS4.FS4_Utils import FS_Utils
+# 模拟真实 Pareto 前沿（假设已知）
+# true_PF = []
+# for i in range(10):
+#     ind = Individual()
+#     ind.objectives = [0.5 + i * 0.1, 50.0 - i * 2, 5 - i * 0.2]
+#     true_PF.append(ind)
+#
+# FS_Utils.save_pareto_front(front=true_PF ,true_pf_file="pareto_fronts.csv",run_id=1)
+#
+# pf = FS_Utils.load_true_pareto_front(true_pf_file="pareto_fronts.csv")
+# print(pf)
 
-class MyProblem(ea.Problem):
-    def __init__(self):
-        name = 'MyProblem'  # 问题名字
-        M = 2  # 目标维数
-        maxormins = [1] * M  # 目标最小最大化标记列表，1：最小化该目标；-1：最大化该目标
-        Dim = 2  # 决策变量维数
-        varTypes = [0] * Dim  # 决策变量的类型，0：实数；1：整数
-        lb = [0] * Dim  # 决策变量下界
-        ub = [5,3]  # 决策变量上界
-        lbin = [1] * Dim  # 决策变量下边界（0表示不包含该变量的下边界，1表示包含）
-        ubin = [1] * Dim  # 决策变量上边界（0表示不包含该变量的上边界，1表示包含）
-        # 调用父类构造方法完成实例化
-        ea.Problem.__init__(self, name, M, maxormins, Dim, varTypes, lb, ub, lbin, ubin)
 
-    # 目标函数
-    def aimFunc(self, pop):
-        Vars = pop.Phen  # 得到决策变量矩阵
-        x1 = Vars[:, [0]]  # 取出第1列
-        x2 = Vars[:, [1]]  # 取出第2列
-        f1 =  4*x1**2 + 4*x2**2  # 目标函数1
-        f2 =  (x1 - 5)**2 + (x2 - 5)**2 # 目标函数2
-        # 采用可行性法则处理约束条件
-        pop.CV = np.hstack([(x1 - 5)**2 + x2**2 - 25,-(x1 - 8)**2 - (x2 - 3)**2 + 7.7])
-        # 把求得的目标函数值赋值给种群pop的ObjV
-        pop.ObjV = np.hstack([f1, f2])
+# max_gen = 200
+# for i in range(max_gen):
+#     # 自适应交叉概率
+#     current_gen = i
+#     scale = 2.0
+#     x = scale * (1 - 2 * current_gen / max_gen)
+#     # 自适应交叉概率
+#     crossover_prob = 1 / (1 + np.exp(-x))  # 0.05-0.95
+#     # 自适应变异概率
+#     mutation_prob = 0.05 + (0.3 - 0.05) * (1 / (1 + np.exp(-x)))  # 0.05-0.3
+#
+#     print("crossover_prob:", crossover_prob)
+#     print("mutation_prob:", mutation_prob)
 
-    def calReferObjV(self): # 计算全局最优解
-        N = 10000  # 欲得到10000个真实前沿点
-        x1 = np.random.uniform(0, 5, N)  # 随机生成10000个x1
-        x2 = x1.copy()
-        x2[x1 >= 3] = 3  # 使x2满足约束条件
-        return np.vstack((4 * x1**2 + 4 * x2**2,
-                          (x1 - 5)**2 + (x2 - 5)**2)).T
-# 实例化问题对象
-Problem = MyProblem()
-Encoding = 'RI'  # 编码方式
-NIND = 100  # 种群规模
-Field = ea.crtfld(Encoding, Problem.varTypes, Problem.ranges, Problem.borders)  # 创建区域描述器
-population = ea.Population(Encoding, Field, NIND)  # 实例化种群对象（此时种群还没被初始化，仅仅是完成种群对象的实例化）
-Algorithm = ea.moea_NSGA2_templet(Problem, population)  # 实例化算法模板对象
-Algorithm.mutOper.Pm = 0.5  # 设置变异算子的变异概率
-Algorithm.recOper.XOVR = 0.9  # 设置重组算子的交叉概率
-Algorithm.MAXGEN = 200  # 设置最大进化代数
-Algorithm.logTras = 1  # 设置是否记录日志，1：记录日志；0：不记录日志
-Algorithm.drawing = 2  # 设置绘图方式，0：不绘图；1：绘制结果图；2：绘制目标空间过程动画
-"""==========================调用算法模板进行种群进化==============
-调用run执行算法模板，得到帕累托最优解集NDSet以及最后一代种群。
-NDSet是一个种群类Population的对象。
-NDSet.ObjV为最优解个体的目标函数值；NDSet.Phen为对应的决策变量值。
-详见Population.py中关于种群类的定义。
-"""
-[NDSet, population] = Algorithm.run()  # 运行算法模板，得到结果
-NDSet.save() # 把非支配种群的信息保存到文件中
-"""===========================输出结果========================"""
-print('用时：%f 秒'%(Algorithm.passTime))
-print('非支配个体数：%d 个'%(NDSet.sizes) if NDSet.sizes!= 0 else print('没有找到可行解！'))
-if Algorithm.log is not None and NDSet.sizes != 0:
-    print('GD', Algorithm.log['gd'][-1])
-    print('IGD', Algorithm.log['igd'][-1])
-    print('HV', Algorithm.log['hv'][-1])
-    print('Spacing', Algorithm.log['spacing'][-1])
-    """======================进化过程指标追踪分析=================="""
-    metricName = [['igd'], ['hv']]
-    Metrics = np.array([Algorithm.log[metricName[i][0]] for i in
-                        range(len(metricName))]).T
-    # 绘制指标追踪分析图
-    ea.trcplot(Metrics, labels=metricName,title=metricName)
 
+
+class YourClass:
+    def __init__(self,Model,Path_Planning):
+        self.model = Model
+        self.path_planning = Path_Planning
+        self.TopoGraph = Model.combined_graph
+        self.path_cache = {}  # 路径缓存 {(enter, target): (length, time)}
+        # print(os.cpu_count())   #12核
+        self._precompute_paths()  # 初始化时预计算
+        '''
+        path_cache = {
+                        "入口A": {
+                            "货位1": (path_length, time_cost),
+                            "货位2": (path_length, time_cost),
+                            ...
+                        },
+                        "入口B": {
+                            "货位1": (path_length, time_cost),
+                            ...
+                        }
+                    }
+        '''
+    # def _precompute_paths(self):
+    #     """并行预计算所有路径"""
+    #     # enter_nodes = self.get_all_enter_nodes()
+    #     target_nodes = self.TopoGraph.nodes()
+    #     args = [(enter, target) for enter in enter_node for target in target_nodes]
+    #
+    #     # 进度条（可选）
+    #     print(f"预计算路径总数: {len(args)}")
+    #     progress = tqdm(total=len(args), desc="路径预计算")
+    #
+    #     # 多进程并行计算
+    #     with ProcessPoolExecutor(max_workers=4) as executor:
+    #         futures = []     # 收集 future 句柄
+    #
+    #         for enter, target in args:  # 遍历所有路径参数
+    #             future = executor.submit(    # 提交任务
+    #                 self._compute_single_path, enter, target
+    #             )
+    #             future.add_done_callback(lambda _: progress.update(1))  # 进度条更新
+    #             futures.append(future)  # 收集 future 句柄
+    #
+    #         # 收集结果
+    #         for future in futures:
+    #             enter, target = future.result()[0]  # 传入参数
+    #             pl, tc = future.result()[1]         # 计算结果
+    #             self.path_cache[enter][target] = (pl, tc)  # 关键修改点
+    #     progress.close()
+    def _precompute_paths(self):
+        # 尝试从文件加载缓存
+        try:
+            with open("path_cache.pkl", "rb") as f:
+                self.path_cache = pickle.load(f)
+            print("从文件加载路径缓存")
+        except FileNotFoundError:
+            status = nx.get_node_attributes(self.TopoGraph, 'status')
+            targets = [target for target in status if status[target] == 0]
+            self.path_cache = {}
+            for enter in enter_node:
+                self._precompute_for_one_enter(enter, targets, batch_size=100)
+            # 保存缓存到文件
+            with open("path_cache.pkl", "wb") as f:
+                pickle.dump(self.path_cache, f)
+            print("路径缓存已保存到文件")
+
+    #将目标节点分批提交到进程池，减少同时运行的进程数量，提高效率
+    def _precompute_for_one_enter(self, enter, targets, batch_size=100):
+        # 确保 self.path_cache[enter] 存在
+        if enter not in self.path_cache:
+            self.path_cache[enter] = {}
+
+        # 初始化进度条
+        progress = tqdm(total=len(targets), desc=f"预计算入口 {enter}", unit="path")
+        targets = list(targets)  # 确保 targets 是列表
+
+        # 分批处理
+        for i in range(0, len(targets), batch_size):
+            batch_targets = targets[i:i + batch_size]
+            with ProcessPoolExecutor() as executor:
+                futures = [executor.submit(self._compute_single_path, enter, target)
+                           for target in batch_targets]
+                for future in as_completed(futures):
+                    (_, target), (pl, tc) = future.result()
+                    self.path_cache[enter][target] = (pl, tc)
+                    progress.update(1)
+        progress.close()
+
+    def _compute_single_path(self, enter, target):
+        """单次路径计算（适配多进程调用）"""
+        try:
+            # 计算路径
+            path, path_length, _ = self.path_planning.improve_A_star(self.TopoGraph, enter, target )
+            # 计算时间
+            time_cost = round(self.path_planning.cal_path_time(self.TopoGraph, path), 2)
+            return (enter, target), (path_length, time_cost)
+        except Exception as e:
+            print(f"路径计算失败：从 {enter} 到 {target}，错误：{str(e)}")
+            return (enter, target), (float('inf'), float('inf'))
+
+if __name__ == '__main__':
+    model = Model()
+    path_planning = Path_Planning(model)
+    YourClass = YourClass(model,path_planning)

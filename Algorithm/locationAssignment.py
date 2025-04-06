@@ -289,16 +289,18 @@ class LocationAssignment(ea.Problem):
                     continue  # 入口点和货位相同，无需移动
                 try:
                     # todo 寻路算法有待替换
-                    # path = nx.shortest_path(self.TopoGraph, enter_node, loc_node, weight='weight')
-                    path, cost, explored = self.path_planning.A_star(self.TopoGraph, enter_node, loc_node,heuristic_index = 1, weight='weight')
+                    path = nx.shortest_path(self.TopoGraph, enter_node, loc_node, weight='weight')
+                    # path, cost, explored = self.path_planning.A_star(self.TopoGraph, enter_node, loc_node,heuristic_index = 1, weight='weight')
                 except nx.NetworkXException:
+                    print("路径不存在！", enter_node, loc_node)
                     total_time = 1e6  # 路径不存在，赋予高惩罚值
-                else:
-                    total_time = self.path_planning.cal_path_time(self.TopoGraph, path)  # 路径时间
+                # else:
+                    # total_time = self.path_planning.cal_path_time(self.TopoGraph, path)  # 路径时间
                     # print(
                     #     f"item：{item}，入库节点{enter_node}到货位{loc_node}的最短路径{path}，时间：{total_time}，周转率：{rate}，效率：{total_time * rate}")
                 # 累加效率（时间乘以周转率）
-                total_efficiency += total_time * rate
+                # total_efficiency += total_time * rate
+                total_efficiency += nx.path_weight(self.TopoGraph, path, 'weight') * rate
             # print("个体：", i, " 的效率：", total_efficiency)
             F2[i] = total_efficiency
         return F2.reshape((-1, 1))  # 转为列向量:-1 表示 NumPy 会根据数组的总元素数量自动计算合适的行数;1 表示重塑后的数组有1列。
@@ -570,18 +572,19 @@ if __name__ == '__main__':
 
     '''========================种群设置================'''
     Encoding = 'RI'  # 编码方式: 'BG'表示采用二进制/格雷编码，'RI'表示采用离散/整数编码;'P' 排列编码，即染色体每一位的元素都是互异的
-    NIND = 100 # 种群规模
+    NIND = 50 # 种群规模
     Field = ea.crtfld(Encoding, loc.varTypes, loc.ranges, loc.borders) #译码矩阵 创建区域描述器
     population = ea.Population(Encoding, Field, NIND) # 实例化种群对象（此时种群还没被真正初始化，仅仅是生成一个种群对象）
     """===========================算法参数设置=========================="""
     #实例化一个算法模板对象
     algorithm = ea.moea_NSGA2_templet(loc, population)
-    algorithm.MAXGEN = 1000        # 最大进化代数
+    algorithm.MAXGEN = 100        # 最大进化代数
     algorithm.mutOper.CR = 0.2     # 修改变异算子的变异概率
     algorithm.recOper.XOVR = 0.9   # 修改交叉算子的交叉概率
     algorithm.logTras = 1          # 设置每隔多少代记录日志，若设置成0则表示不记录日志
     algorithm.verbose = True       # 设置是否打印输出日志信息
     algorithm.drawing = 1          # 设置绘图方式（0：不绘图；1：绘制结果图；2：绘制目标空间过程动画；3：绘制决策空间过程动画）
+    algorithm.recordMetrics = True # 启用指标记录（部分版本需手动配置）
     """==========================调用算法模板进行种群进化==============="""
     '''调用run执行算法模板，得到帕累托最优解集NDSet以及最后一代种群。
     NDSet是一个种群类Population的对象。

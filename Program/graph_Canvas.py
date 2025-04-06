@@ -35,12 +35,12 @@ class graph_FigureCanvas(FigureCanvas):
             self.ax = self.fig.add_subplot(111)# 添加子图到图形中
             # self.ax.set_xlim(-10,50)  # 设置x轴最小值
             # self.ax.set_ylim(-10, 50)  # 设置 Y 轴范围
-
+            #
             # self.ax.set_aspect('auto') # 使用 'auto' 让坐标轴按数据范围自由伸缩,会被变形
             # self.ax.set_aspect('equal') # 设置 X, Y 轴等比例,否则会变形
             # self.ax.invert_yaxis()  # 反转y轴  使Y轴从上到下增大！
             # self.ax.xaxis.tick_top()  # X 轴刻度显示在顶部
-
+            #
             # self.ax.spines['bottom'].set_position(('data', 0))  # 设置x轴线再Y轴0位置
             # self.ax.spines['left'].set_position(('data',0))  # 设置y轴在x轴0位置
             # self.ax.spines['top'].set_visible(False)  # 去掉上边框
@@ -56,6 +56,68 @@ class graph_FigureCanvas(FigureCanvas):
         self.is_running = True
         self.connect_event()  # 连接事件
         self.highlighted_node = None  # 高亮的节点
+
+    def show_agv_paths_dynamic(self, planner):
+        """
+        动态显示多辆AGV的路径。
+
+        :param planner: MultiVehiclePathPlanner实例，包含AGV路径和时间表
+        """
+        location = nx.get_node_attributes(self.floor, 'location')
+        paths = planner.paths  # {vehicle_id: {'path': [nodes], 'times': [times]}}
+        colors = ['red', 'blue', 'green', 'orange', 'purple', 'cyan']  # 为每辆AGV分配颜色
+        agv_positions = {vid: {'scatter': None, 'path_line': None, 'index': 0} for vid in paths.keys()}
+
+        def update(frame):
+            if not self.is_running:
+                for ani in self.agv_animations:
+                    ani.event_source.stop()
+                return []
+
+            artists = []
+            for i, (vid, path_data) in enumerate(paths.items()):
+                path = path_data['path']
+                times = path_data['times']
+                color = colors[i % len(colors)]
+                agv = agv_positions[vid]
+
+                if agv['index'] < len(path):
+                    # 当前位置
+                    x = location[path[agv['index']]][0]
+                    y = location[path[agv['index']]][1]
+
+                    # 更新AGV位置散点
+                    if agv['scatter'] is not None:
+                        agv['scatter'].remove()
+                    agv['scatter'] = self.ax.scatter(x, y, c=color, marker='s', s=100, edgecolors='black', zorder=3)
+                    artists.append(agv['scatter'])
+
+                    # 更新路径线
+                    if agv['index'] > 0:
+                        if agv['path_line'] is not None:
+                            agv['path_line'].remove()
+                        path_x = [location[path[j]][0] for j in range(agv['index'] + 1)]
+                        path_y = [location[path[j]][1] for j in range(agv['index'] + 1)]
+                        agv['path_line'] = self.ax.plot(path_x, path_y, c=color, linewidth=2, zorder=2)[0]
+                        artists.append(agv['path_line'])
+
+                    agv['index'] += 1
+                    print(f"AGV {vid} at node {path[agv['index']-1]} at time {times[agv['index']-1]}")
+                else:
+                    # 路径完成后保持最后位置
+                    if agv['scatter'] is not None:
+                        artists.append(agv['scatter'])
+                    if agv['path_line'] is not None:
+                        artists.append(agv['path_line'])
+
+            self.fig.canvas.draw_idle()
+            self.fig.canvas.flush_events()
+            return artists
+
+        # 计算最大帧数
+        max_frames = max(len(data['path']) for data in paths.values())
+        ani = FuncAnimation(self.fig, update, frames=max_frames, interval=500, repeat=False, blit=True)
+        self.agv_animations.append(ani)
 
     def connect_event(self):
         self.cid1 = self.fig.canvas.mpl_connect('button_press_event', self.on_mouse_press)  # 鼠标左键按下
@@ -95,6 +157,7 @@ class graph_FigureCanvas(FigureCanvas):
             # 获取节点位置
             location = nx.get_node_attributes(self.floor, 'location')
             colors = nx.get_node_attributes(self.floor, 'node_colors')
+            pos = nx.get_node_attributes(self.floor, 'pos')
             # 遍历节点位置字典
             for node, (x, y) in location.items():
                 delta_x = abs(x - click_x)
@@ -115,7 +178,7 @@ class graph_FigureCanvas(FigureCanvas):
             if clicked_node is not None:
                 self.highlighted_node = clicked_node
                 x, y = location[clicked_node]
-                print(f"2.本次点击的节点: {clicked_node}, 坐标: ({x}, {y})")
+                print(f"2.本次点击的节点: {clicked_node}, 坐标: ({x}, {y}),排：{pos[clicked_node][0]}, 列：{pos[clicked_node][1]}， 层：{pos[clicked_node][2]}")
                 self.ax.scatter(x, y, c='red', marker='o', edgecolors='black', linewidths=0.7, zorder=2)
                 self.draw()  ## 更新绘图
             else:# 如果没有点击到节点，重置高亮节点
@@ -414,10 +477,11 @@ class ResultsDialog(QWidget):#QDialog
     def plot_results_Together(self, algorithm_results):
         # 获取数据
         algorithm_names = list(algorithm_results.keys())    #横坐标
-        take_times = [round(result['take_time'],3) for result in algorithm_results.values()]
-        costs = [round(result['cost'],2) for result in algorithm_results.values()]
+        take_times = [result['take_time'] for result in algorithm_results.values()]
+        costs = [result['cost'] for result in algorithm_results.values()]
         turn_counts = [result['turn_count'] for result in algorithm_results.values()]
         explored_counts = [result['explored'] for result in algorithm_results.values()]
+        path_times = [result['cal_path_time'] for result in algorithm_results.values()]
         ax = self.figure.add_subplot(111)
 
         V = 1.2 #平均速度
@@ -489,198 +553,196 @@ class ResultsDialog(QWidget):#QDialog
 
     '''分别显示四个图表'''
     def plot_results(self, algorithm_results):
+        algorithm_names = list(algorithm_results.keys())
+        take_times = [result['take_time'] for result in algorithm_results.values()]
+        costs = [result['cost'] for result in algorithm_results.values()]
+        turn_counts = [result['turn_count'] for result in algorithm_results.values()]
+        explored_counts = [result['explored'] for result in algorithm_results.values()]
+        path_times = [result['cal_path_time'] for result in algorithm_results.values()]
         # 获取数据
-        algorithms = ['Dijkstra', 'A_star', 'improve_A_star', 'weight_ATL_star']
-        # colors = ['b', 'r', 'y', 'c']
-        # markers = ['o', 's', '+', 'D']
-        Dijkstra_take_time =mean( algorithm_results['Dijkstra']['take_time'])
-        A_star_take_time = mean(algorithm_results['A_star']['take_time'])
-        improve_A_star_take_time = mean(algorithm_results['improve_A_star']['take_time'])
-        weight_ATL_star_take_time = mean(algorithm_results['weight_ATL_star']['take_time'])
+        algorithms = ['Dijkstra', 'A_star', 'improve_A_star', 'abs_ATL_star']
+        colors = ['b', 'r', 'y', 'c']
+        markers = ['o', 's', '+', 'D']
+        # Dijkstra_take_time =mean( algorithm_results['Dijkstra']['take_time'])
+        # A_star_take_time = mean(algorithm_results['A_star']['take_time'])
+        # improve_A_star_take_time = mean(algorithm_results['improve_A_star']['take_time'])
+        # weight_ATL_star_take_time = mean(algorithm_results['abs_ATL_star']['take_time'])
+        #
+        # Dijkstra_turn_count = mean(algorithm_results['Dijkstra']['turn_count'])
+        # A_star_turn_count = mean(algorithm_results['A_star']['turn_count'])
+        # improve_A_star_turn_count = mean(algorithm_results['improve_A_star']['turn_count'])
+        # weight_ATL_star_turn_count = mean(algorithm_results['abs_ATL_star']['turn_count'])
+        #
+        # Dijkstra_explored = mean(algorithm_results['Dijkstra']['explored'])
+        # A_star_explored = mean(algorithm_results['A_star']['explored'])
+        # improve_A_star_explored = mean(algorithm_results['improve_A_star']['explored'])
+        # weight_ATL_star_explored = mean(algorithm_results['abs_ATL_star']['explored'])
 
-        Dijkstra_turn_count = mean(algorithm_results['Dijkstra']['turn_count'])
-        A_star_turn_count = mean(algorithm_results['A_star']['turn_count'])
-        improve_A_star_turn_count = mean(algorithm_results['improve_A_star']['turn_count'])
-        weight_ATL_star_turn_count = mean(algorithm_results['weight_ATL_star']['turn_count'])
-
-        Dijkstra_explored = mean(algorithm_results['Dijkstra']['explored'])
-        A_star_explored = mean(algorithm_results['A_star']['explored'])
-        improve_A_star_explored = mean(algorithm_results['improve_A_star']['explored'])
-        weight_ATL_star_explored = mean(algorithm_results['weight_ATL_star']['explored'])
-
-        print(f"Dijkstra_take_time: {Dijkstra_take_time}, A_star_take_time: {A_star_take_time}, improve_A_star_take_time: {improve_A_star_take_time}, weight_ATL_star_take_time: {weight_ATL_star_take_time}"
-              f"Dijkstra_turn_count: {Dijkstra_turn_count}, A_star_turn_count: {A_star_turn_count}, improve_A_star_turn_count: {improve_A_star_turn_count}, weight_ATL_star_turn_count: {weight_ATL_star_turn_count}"
-              f"Dijkstra_explored: {Dijkstra_explored}, A_star_explored: {A_star_explored}, improve_A_star_explored: {improve_A_star_explored}, weight_ATL_star_explored: {weight_ATL_star_explored}")
-
-        print(f"平均耗时优化率Dijkstra：{(weight_ATL_star_take_time-Dijkstra_take_time)/Dijkstra_take_time*100},"
-              f"平均耗时优化率A*：{(weight_ATL_star_take_time-A_star_take_time)/A_star_take_time*100},"
-              f"平均耗时优化率改进A*：{(weight_ATL_star_take_time-improve_A_star_take_time)/improve_A_star_take_time*100}\n"
-              f"平均转向次数优化率Dijkstra：{(weight_ATL_star_turn_count-Dijkstra_turn_count)/Dijkstra_turn_count*100},"
-              f"平均转向次数优化率A*：{(weight_ATL_star_turn_count-A_star_turn_count)/A_star_turn_count*100},"
-              f"平均转向次数优化率改进A*：{(weight_ATL_star_turn_count-improve_A_star_turn_count)/improve_A_star_turn_count*100}\n"
-              f"平均探索节点数优化率Dijkstra：{(weight_ATL_star_explored-Dijkstra_explored)/Dijkstra_explored*100},"
-              f"平均探索节点数优化率A*：{(weight_ATL_star_explored-A_star_explored)/A_star_explored*100},"
-              f"平均探索节点数优化率改进A*：{(weight_ATL_star_explored-improve_A_star_explored)/improve_A_star_explored*100}\n")
-
-
-
-        #平均耗时优化率
-
-        #转向次数优化率
-
-        #探索节点数优化率
+        # print(f"Dijkstra_take_time: {Dijkstra_take_time}, A_star_take_time: {A_star_take_time}, improve_A_star_take_time: {improve_A_star_take_time}, weight_ATL_star_take_time: {weight_ATL_star_take_time}"
+        #       f"Dijkstra_turn_count: {Dijkstra_turn_count}, A_star_turn_count: {A_star_turn_count}, improve_A_star_turn_count: {improve_A_star_turn_count}, weight_ATL_star_turn_count: {weight_ATL_star_turn_count}"
+        #       f"Dijkstra_explored: {Dijkstra_explored}, A_star_explored: {A_star_explored}, improve_A_star_explored: {improve_A_star_explored}, weight_ATL_star_explored: {weight_ATL_star_explored}")
+        #
+        # print(f"平均耗时优化率Dijkstra：{(weight_ATL_star_take_time-Dijkstra_take_time)/Dijkstra_take_time*100},"
+        #       f"平均耗时优化率A*：{(weight_ATL_star_take_time-A_star_take_time)/A_star_take_time*100},"
+        #       f"平均耗时优化率改进A*：{(weight_ATL_star_take_time-improve_A_star_take_time)/improve_A_star_take_time*100}\n"
+        #       f"平均转向次数优化率Dijkstra：{(weight_ATL_star_turn_count-Dijkstra_turn_count)/Dijkstra_turn_count*100},"
+        #       f"平均转向次数优化率A*：{(weight_ATL_star_turn_count-A_star_turn_count)/A_star_turn_count*100},"
+        #       f"平均转向次数优化率改进A*：{(weight_ATL_star_turn_count-improve_A_star_turn_count)/improve_A_star_turn_count*100}\n"
+        #       f"平均探索节点数优化率Dijkstra：{(weight_ATL_star_explored-Dijkstra_explored)/Dijkstra_explored*100},"
+        #       f"平均探索节点数优化率A*：{(weight_ATL_star_explored-A_star_explored)/A_star_explored*100},"
+        #       f"平均探索节点数优化率改进A*：{(weight_ATL_star_explored-improve_A_star_explored)/improve_A_star_explored*100}\n")
 
 
         #路径距离
-        # ax1 = self.figure.add_subplot(111)
-        # # # 绘制所有算法的耗时
-        # Dijkstra_take_time = algorithm_results['Dijkstra']['cost']
-        # A_star_take_time = algorithm_results['A_star']['cost']
-        # improve_A_star_take_time = algorithm_results['improve_A_star']['cost']
-        # # ATL_star_take_time = algorithm_results['ATL_star']['take_time']
-        # weight_ATL_star_take_time = algorithm_results['weight_ATL_star']['cost']
-        # nums = list(range(1, len(Dijkstra_take_time) + 1))
-        # # 创建子图
-        # ax1.plot(nums, Dijkstra_take_time, color='b', marker='o', label='Dijkstra') # 绘制柱状图
-        # ax1.plot(nums, A_star_take_time, color='r', marker='o', label='A*')
-        # ax1.plot(nums, improve_A_star_take_time, color='y', marker='o', label='改进A*')
-        # ax1.plot(nums, weight_ATL_star_take_time, color='c', marker='o', label='本文方法')
-        #
-        # ax1.set_xticks(nums)
-        # ax1.set_xticklabels(nums,fontproperties='Times New Roman', fontsize=15,fontweight='bold')
-        # for label in ax1.get_yticklabels():
-        #     label.set_fontproperties('Times New Roman')  # 设置字体为宋体
-        #     label.set_size(15)  # 设置字体大小
-        #     label.set_weight('bold')  # 设置字体粗细
-        # ax1.set_ylim(0, max(max(Dijkstra_take_time), max(A_star_take_time), max(improve_A_star_take_time), max(weight_ATL_star_take_time))*1.3)  # 设置 Y 轴范围
-        # ax1.set_title('路径成本',fontsize=15, fontweight='bold')
-        # ax1.set_ylabel('路径成本(m)',fontsize=15, fontweight='bold')
-        # ax1.set_xlabel('任务编号',fontsize=15, fontweight='bold')
-        # ax1.legend(fontsize=15,ncol=4, loc='upper left')    # 显示图例
-        # # 添加网格和背景
-        # ax1.grid(True)
-        # self.figure.tight_layout()#调整子图间距
+        ax1 = self.figure.add_subplot(111)
+        # # 绘制所有算法的耗时
+        Dijkstra_take_time = algorithm_results['Dijkstra']['cost']
+        A_star_take_time = algorithm_results['A_star']['cost']
+        improve_A_star_take_time = algorithm_results['improve_A_star']['cost']
+        # ATL_star_take_time = algorithm_results['ATL_star']['take_time']
+        weight_ATL_star_take_time = algorithm_results['abs_ATL_star']['cost']
+        nums = list(range(1, len(Dijkstra_take_time) + 1))
+        # 创建子图
+        ax1.plot(nums, Dijkstra_take_time, color='b', marker='o', label='Dijkstra') # 绘制柱状图
+        ax1.plot(nums, A_star_take_time, color='r', marker='o', label='A*')
+        ax1.plot(nums, improve_A_star_take_time, color='y', marker='o', label='改进A*')
+        ax1.plot(nums, weight_ATL_star_take_time, color='c', marker='o', label='本文方法')
 
-        #拐点数
-        # ax1 = self.figure.add_subplot(111)
-        # # # 绘制所有算法的耗时
-        # Dijkstra_take_time = algorithm_results['Dijkstra']['turn_count']
-        # A_star_take_time = algorithm_results['A_star']['turn_count']
-        # improve_A_star_take_time = algorithm_results['improve_A_star']['turn_count']
-        # # ATL_star_take_time = algorithm_results['ATL_star']['take_time']
-        # weight_ATL_star_take_time = algorithm_results['weight_ATL_star']['turn_count']
-        # nums = list(range(1, len(Dijkstra_take_time) + 1))
-        # # 创建子图
-        # ax1.plot(nums, Dijkstra_take_time, color='b', marker='o', label='Dijkstra') # 绘制柱状图
-        # ax1.plot(nums, A_star_take_time, color='r', marker='o', label='A*')
-        # ax1.plot(nums, improve_A_star_take_time, color='y', marker='o', label='改进A*')
-        # ax1.plot(nums, weight_ATL_star_take_time, color='c', marker='o', label='本文方法')
-        # ax1.set_xticks(nums)
-        # ax1.set_xticklabels(nums,fontproperties='Times New Roman', fontsize=15,fontweight='bold')
-        # for label in ax1.get_yticklabels():
-        #     label.set_fontproperties('Times New Roman')  # 设置字体为宋体
-        #     label.set_size(15)  # 设置字体大小
-        #     label.set_weight('bold')  # 设置字体粗细
-        # ax1.set_ylim(0, max(max(Dijkstra_take_time), max(A_star_take_time), max(improve_A_star_take_time), max(weight_ATL_star_take_time))*1.3)  # 设置 Y 轴范围
-        # ax1.set_title('转向次数',fontsize=15, fontweight='bold')
-        # ax1.set_ylabel('转向次数(次)',fontsize=15, fontweight='bold')
-        # ax1.set_xlabel('任务编号',fontsize=15, fontweight='bold')
-        # ax1.legend(fontsize=15,ncol=4, loc='upper left')    # 显示图例
-        # # 添加网格和背景
-        # ax1.grid(True)
-        # self.figure.tight_layout()#调整子图间距
-        # self.save_image( "turn_count")
+        ax1.set_xticks(nums)
+        ax1.set_xticklabels(nums,fontproperties='Times New Roman', fontsize=15,fontweight='bold')
+        for label in ax1.get_yticklabels():
+            label.set_fontproperties('Times New Roman')  # 设置字体为宋体
+            label.set_size(15)  # 设置字体大小
+            label.set_weight('bold')  # 设置字体粗细
+        ax1.set_ylim(0, max(max(Dijkstra_take_time), max(A_star_take_time), max(improve_A_star_take_time), max(weight_ATL_star_take_time))*1.3)  # 设置 Y 轴范围
+        ax1.set_title('路径成本',fontsize=15, fontweight='bold')
+        ax1.set_ylabel('路径成本(m)',fontsize=15, fontweight='bold')
+        ax1.set_xlabel('任务编号',fontsize=15, fontweight='bold')
+        ax1.legend(fontsize=15,ncol=4, loc='upper left')    # 显示图例
+        # 添加网格和背景
+        ax1.grid(True)
+        self.figure.tight_layout()#调整子图间距
 
-        #探索节点数
-        # ax1 = self.figure.add_subplot(111)
-        # # # 绘制所有算法的耗时
-        # Dijkstra_take_time = algorithm_results['Dijkstra']['explored']
-        # A_star_take_time = algorithm_results['A_star']['explored']
-        # improve_A_star_take_time = algorithm_results['improve_A_star']['explored']
-        # # ATL_star_take_time = algorithm_results['ATL_star']['take_time']
-        # weight_ATL_star_take_time = algorithm_results['weight_ATL_star']['explored']
-        # nums = list(range(1, len(Dijkstra_take_time) + 1))
-        # # 创建子图
-        # # ax1 = self.figure.add_subplot(221)
-        # ax1.plot(nums, Dijkstra_take_time, color='b', marker='o', label='Dijkstra') # 绘制柱状图
-        # ax1.plot(nums, A_star_take_time, color='r', marker='o', label='A*')
-        # ax1.plot(nums, improve_A_star_take_time, color='y', marker='o', label='改进A*')
-        # ax1.plot(nums, weight_ATL_star_take_time, color='c', marker='o', label='本文方法')
-        # ax1.set_xticks(nums)
-        # ax1.set_xticklabels(nums,fontproperties='Times New Roman', fontsize=15,fontweight='bold')
-        # for label in ax1.get_yticklabels():
-        #     label.set_fontproperties('Times New Roman')  # 设置字体为宋体
-        #     label.set_size(15)  # 设置字体大小
-        #     label.set_weight('bold')  # 设置字体粗细
-        # ax1.set_ylim(0, max(max(Dijkstra_take_time), max(A_star_take_time), max(improve_A_star_take_time), max(weight_ATL_star_take_time))*1.3)  # 设置 Y 轴范围
-        # ax1.set_title('探索节点数',fontsize=15, fontweight='bold')
-        # ax1.set_ylabel('探索节点数(个)',fontsize=15, fontweight='bold')
-        # ax1.set_xlabel('任务编号',fontsize=15, fontweight='bold')
-        # ax1.legend(fontsize=15,ncol=4,bbox_to_anchor=(0.5, 1.05), handlelength=1.5, loc='upper left')    # 显示图例
-        # # 添加网格和背景
-        # ax1.grid(True)
-        # self.figure.tight_layout()#调整子图间距
-        # self.save_image( "len(explored)")
+        # 拐点数
+        ax1 = self.figure.add_subplot(111)
+        # # 绘制所有算法的耗时
+        Dijkstra_take_time = algorithm_results['Dijkstra']['turn_count']
+        A_star_take_time = algorithm_results['A_star']['turn_count']
+        improve_A_star_take_time = algorithm_results['improve_A_star']['turn_count']
+        # ATL_star_take_time = algorithm_results['ATL_star']['take_time']
+        weight_ATL_star_take_time = algorithm_results['abs_ATL_star']['turn_count']
+        nums = list(range(1, len(Dijkstra_take_time) + 1))
+        # 创建子图
+        ax1.plot(nums, Dijkstra_take_time, color='b', marker='o', label='Dijkstra') # 绘制柱状图
+        ax1.plot(nums, A_star_take_time, color='r', marker='o', label='A*')
+        ax1.plot(nums, improve_A_star_take_time, color='y', marker='o', label='改进A*')
+        ax1.plot(nums, weight_ATL_star_take_time, color='c', marker='o', label='本文方法')
+        ax1.set_xticks(nums)
+        ax1.set_xticklabels(nums,fontproperties='Times New Roman', fontsize=15,fontweight='bold')
+        for label in ax1.get_yticklabels():
+            label.set_fontproperties('Times New Roman')  # 设置字体为宋体
+            label.set_size(15)  # 设置字体大小
+            label.set_weight('bold')  # 设置字体粗细
+        ax1.set_ylim(0, max(max(Dijkstra_take_time), max(A_star_take_time), max(improve_A_star_take_time), max(weight_ATL_star_take_time))*1.3)  # 设置 Y 轴范围
+        ax1.set_title('转向次数',fontsize=15, fontweight='bold')
+        ax1.set_ylabel('转向次数(次)',fontsize=15, fontweight='bold')
+        ax1.set_xlabel('任务编号',fontsize=15, fontweight='bold')
+        ax1.legend(fontsize=15,ncol=4, loc='upper left')    # 显示图例
+        # 添加网格和背景
+        ax1.grid(True)
+        self.figure.tight_layout()#调整子图间距
+        self.save_image( "turn_count")
+
+        # 探索节点数
+        ax1 = self.figure.add_subplot(111)
+        # # 绘制所有算法的耗时
+        Dijkstra_take_time = algorithm_results['Dijkstra']['explored']
+        A_star_take_time = algorithm_results['A_star']['explored']
+        improve_A_star_take_time = algorithm_results['improve_A_star']['explored']
+        # ATL_star_take_time = algorithm_results['ATL_star']['take_time']
+        weight_ATL_star_take_time = algorithm_results['abs_ATL_star']['explored']
+        nums = list(range(1, len(Dijkstra_take_time) + 1))
+        # 创建子图
+        # ax1 = self.figure.add_subplot(221)
+        ax1.plot(nums, Dijkstra_take_time, color='b', marker='o', label='Dijkstra') # 绘制柱状图
+        ax1.plot(nums, A_star_take_time, color='r', marker='o', label='A*')
+        ax1.plot(nums, improve_A_star_take_time, color='y', marker='o', label='改进A*')
+        ax1.plot(nums, weight_ATL_star_take_time, color='c', marker='o', label='本文方法')
+        ax1.set_xticks(nums)
+        ax1.set_xticklabels(nums,fontproperties='Times New Roman', fontsize=15,fontweight='bold')
+        for label in ax1.get_yticklabels():
+            label.set_fontproperties('Times New Roman')  # 设置字体为宋体
+            label.set_size(15)  # 设置字体大小
+            label.set_weight('bold')  # 设置字体粗细
+        ax1.set_ylim(0, max(max(Dijkstra_take_time), max(A_star_take_time), max(improve_A_star_take_time), max(weight_ATL_star_take_time))*1.3)  # 设置 Y 轴范围
+        ax1.set_title('探索节点数',fontsize=15, fontweight='bold')
+        ax1.set_ylabel('探索节点数(个)',fontsize=15, fontweight='bold')
+        ax1.set_xlabel('任务编号',fontsize=15, fontweight='bold')
+        ax1.legend(fontsize=15,ncol=4,bbox_to_anchor=(0.5, 1.05), handlelength=1.5, loc='upper left')    # 显示图例
+        # 添加网格和背景
+        ax1.grid(True)
+        self.figure.tight_layout()#调整子图间距
+        self.save_image( "len(explored)")
 
         # 耗时
-        # ax1 = self.figure.add_subplot(111)
-        # # # 绘制所有算法的耗时
-        # Dijkstra_take_time = algorithm_results['Dijkstra']['take_time']
-        # A_star_take_time = algorithm_results['A_star']['take_time']
-        # improve_A_star_take_time = algorithm_results['improve_A_star']['take_time']
-        # # ATL_star_take_time = algorithm_results['ATL_star']['take_time']
-        # weight_ATL_star_take_time = algorithm_results['weight_ATL_star']['take_time']
-        # nums = list(range(1, len(Dijkstra_take_time) + 1))
-        # # 创建子图
-        # # ax1 = self.figure.add_subplot(221)
-        # ax1.plot(nums, Dijkstra_take_time, color='b', marker='o', label='Dijkstra') # 绘制柱状图
-        # ax1.plot(nums, A_star_take_time, color='r', marker='s', label='A*')
-        # ax1.plot(nums, improve_A_star_take_time, color='y', marker='+', label='改进A*')
-        # ax1.plot(nums, weight_ATL_star_take_time, color='c', marker='D', label='本文方法')
-        # ax1.set_xticks(nums)
-        # ax1.set_xticklabels(nums,fontproperties='Times New Roman', fontsize=15,fontweight='bold')
-        # for label in ax1.get_yticklabels():
-        #     label.set_fontproperties('Times New Roman')  # 设置字体为宋体
-        #     label.set_size(15)  # 设置字体大小
-        #     label.set_weight('bold')  # 设置字体粗细
-        # ax1.set_ylim(0, max(max(Dijkstra_take_time), max(A_star_take_time), max(improve_A_star_take_time), max(weight_ATL_star_take_time))*1.3)  # 设置 Y 轴范围
-        # ax1.set_title('搜索耗时',fontsize=15, fontweight='bold')
-        # ax1.set_ylabel('时间(ms)',fontsize=15, fontweight='bold')
-        # ax1.set_xlabel('任务编号',fontsize=15, fontweight='bold')
-        # ax1.legend(fontsize=15,ncol=4, loc='upper left')    # 显示图例
-        # # 添加网格和背景
-        # ax1.grid(True)
-        # self.save_image( "search_time")
+        ax1 = self.figure.add_subplot(111)
+        # # 绘制所有算法的耗时
+        Dijkstra_take_time = algorithm_results['Dijkstra']['take_time']
+        A_star_take_time = algorithm_results['A_star']['take_time']
+        improve_A_star_take_time = algorithm_results['improve_A_star']['take_time']
+        # ATL_star_take_time = algorithm_results['ATL_star']['take_time']
+        weight_ATL_star_take_time = algorithm_results['abs_ATL_star']['take_time']
+        nums = list(range(1, len(Dijkstra_take_time) + 1))
+        # 创建子图
+        # ax1 = self.figure.add_subplot(221)
+        ax1.plot(nums, Dijkstra_take_time, color='b', marker='o', label='Dijkstra') # 绘制柱状图
+        ax1.plot(nums, A_star_take_time, color='r', marker='s', label='A*')
+        ax1.plot(nums, improve_A_star_take_time, color='y', marker='+', label='改进A*')
+        ax1.plot(nums, weight_ATL_star_take_time, color='c', marker='D', label='本文方法')
+        ax1.set_xticks(nums)
+        ax1.set_xticklabels(nums,fontproperties='Times New Roman', fontsize=15,fontweight='bold')
+        for label in ax1.get_yticklabels():
+            label.set_fontproperties('Times New Roman')  # 设置字体为宋体
+            label.set_size(15)  # 设置字体大小
+            label.set_weight('bold')  # 设置字体粗细
+        ax1.set_ylim(0, max(max(Dijkstra_take_time), max(A_star_take_time), max(improve_A_star_take_time), max(weight_ATL_star_take_time))*1.3)  # 设置 Y 轴范围
+        ax1.set_title('搜索耗时',fontsize=15, fontweight='bold')
+        ax1.set_ylabel('时间(ms)',fontsize=15, fontweight='bold')
+        ax1.set_xlabel('任务编号',fontsize=15, fontweight='bold')
+        ax1.legend(fontsize=15,ncol=4, loc='upper left')    # 显示图例
+        # 添加网格和背景
+        ax1.grid(True)
+        self.save_image( "search_time")
 
-           #
 
-        # ax2 = self.figure.add_subplot(222)
-        # # ax2.bar(algorithm_names, costs, color='g')
-        # ax2.plot(algorithm_names, costs, color='g', marker='o')
-        # # 为ax2的每个点添加注释
-        # for i, txt in enumerate(costs):
-        #     ax2.annotate(txt, (algorithm_names[i], costs[i]), textcoords="offset points", xytext=(0,10), ha='center')
-        # ax2.set_title('最短距离')
-        # ax2.set_ylabel('距离(m)')
-        # ax2.set_xlabel('任务编号')
-        #
-        # ax3 = self.figure.add_subplot(223)
-        # # ax3.bar(algorithm_names, turn_counts, color='r')
-        # ax3.plot(algorithm_names, turn_counts, color='r', marker='o')
-        # for i, txt in enumerate(turn_counts):
-        #     ax3.annotate(txt, (algorithm_names[i], turn_counts[i]), textcoords="offset points", xytext=(0,10), ha='center')
-        # ax3.set_title('转向次数')
-        # ax3.set_ylabel('次数')
-        # ax3.set_xlabel('任务编号')
-        #
-        # ax4 = self.figure.add_subplot(224)
-        # # ax4.bar(algorithm_names, explored_counts, color='y')
-        # ax4.plot(algorithm_names, explored_counts, color='y', marker='o')
-        # for i, txt in enumerate(explored_counts):
-        #     ax4.annotate(txt, (algorithm_names[i], explored_counts[i]), textcoords="offset points", xytext=(0,10), ha='center')
-        # ax4.set_title('探索节点数')
-        # ax4.set_ylabel('节点数')
-        # ax4.set_xlabel('任务编号')
+
+        ax2 = self.figure.add_subplot(222)
+        # ax2.bar(algorithm_names, costs, color='g')
+        ax2.plot(algorithm_names, costs, color='g', marker='o')
+        # 为ax2的每个点添加注释
+        for i, txt in enumerate(costs):
+            ax2.annotate(txt, (algorithm_names[i], costs[i]), textcoords="offset points", xytext=(0,10), ha='center')
+        ax2.set_title('最短距离')
+        ax2.set_ylabel('距离(m)')
+        ax2.set_xlabel('任务编号')
+
+        ax3 = self.figure.add_subplot(223)
+        # ax3.bar(algorithm_names, turn_counts, color='r')
+        ax3.plot(algorithm_names, turn_counts, color='r', marker='o')
+        for i, txt in enumerate(turn_counts):
+            ax3.annotate(txt, (algorithm_names[i], turn_counts[i]), textcoords="offset points", xytext=(0,10), ha='center')
+        ax3.set_title('转向次数')
+        ax3.set_ylabel('次数')
+        ax3.set_xlabel('任务编号')
+
+        ax4 = self.figure.add_subplot(224)
+        # ax4.bar(algorithm_names, explored_counts, color='y')
+        ax4.plot(algorithm_names, explored_counts, color='y', marker='o')
+        for i, txt in enumerate(explored_counts):
+            ax4.annotate(txt, (algorithm_names[i], explored_counts[i]), textcoords="offset points", xytext=(0,10), ha='center')
+        ax4.set_title('探索节点数')
+        ax4.set_ylabel('节点数')
+        ax4.set_xlabel('任务编号')
 
         self.canvas.draw()
 

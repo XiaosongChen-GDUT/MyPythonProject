@@ -1,3 +1,4 @@
+import copy
 import math
 import random
 from collections import defaultdict
@@ -28,10 +29,14 @@ Max_speed_lift = 1.4;  # 提升机最大速度
 
 out_point = [445, 820, 971, 1156]  # 出口点
 enter_node = [51, 348, 636, 925, 1110, 1620]# 入口点
-fist_connect_point = [642, 1116, 674, 1148]  # 1楼提升机接驳点
-second_connect_point = [2374, 2844, 2406, 2876]  # 2楼接驳点
+fist_connect_point = [642,  674, 1116, 1148]  # 1楼提升机接驳点
+second_connect_point = [2374,  2406, 2844, 2876]  # 2楼接驳点
 third_connect_point = [3899, 4135]  # 3楼接驳点
-
+ref_front = np.array([#设置参考帕累托前沿面
+    [0.5, 10.0, 100.0, 50.0],  # 一个理想点
+    [1.0, 20.0, 80.0, 40.0],   # 另一个理想点
+    # 根据实际情况添加更多点
+])
 class LocationAssignment_Aisles(ea.Problem):
     def __init__(self):
         '''
@@ -51,25 +56,13 @@ class LocationAssignment_Aisles(ea.Problem):
             规格：规格
             数量：数量
 
-            货物（托盘)：ID,
-            'enter_node'(入库节点)：ID,
-            'rate': rate,
-            'quality': quality,
-            'dimension': dimension
-            'sku': sku = 0,1,2,3....
-
-        历史货物数据格式：
-            货物编号：货位id、质量、周转率、规格、sku
-            'location_node':货位ID
-            'rate': rate,
-            'quality': quality,
-            'dimension': dimension
-            'sku': sku
         '''
 
         self.history_Loc = {}   # 历史货物
         self.pending_Loc = {}  # 待入库货物
         self.asiles = {}  # 货道
+        self.free_aisles = []  # 新增：存储当前空闲货道ID列表
+        self.node_sku_map = {}  # {货位节点ID: SKU_ID}
         #初始化相关性矩阵
         self.correlation_matrix = None
         #历史货物层信息：计算相关性用
@@ -95,329 +88,334 @@ class LocationAssignment_Aisles(ea.Problem):
         if self.TopoGraph is None:
             warnings.warn("No TopoGraph，cannot init problem!", RuntimeWarning)
             return
+        # 步骤1：动态获取空闲货道
+        self.free_aisles = [
+            aisle_id for aisle_id, aisle in self.asiles.items()
+            if aisle['capacity'] > 0
+        ]
+        n = len(self.free_aisles)
+        total_needed = sum(sku['num'] for sku in self.pending_Loc.values())
+        # 步骤2：校验可行性
+        total_capacity = sum(aisle['capacity'] for aisle in self.asiles.values())
+        if total_capacity < total_needed:
+            raise ValueError("库存容量不足! 需求:{} 可用:{}".format(total_needed, total_capacity))
 
-        # 图中节点的状态：-1-储货点，0-空闲，1-占用
-        self.status = nx.get_node_attributes(self.TopoGraph, 'status')
-        # 空闲货位集合
-        self.free_status = [i for i in self.status if self.status[i] == 0]
-        # 空闲货位,按维度分类A\B\C\D
-        self.free_Loc = {}
-        for node in self.TopoGraph.nodes():
-            if self.TopoGraph.nodes[node]['status'] == 0:
-                dimension = self.TopoGraph.nodes[node]['dimension']
-                if dimension not in self.free_Loc:
-                    self.free_Loc[dimension] = []
-                self.free_Loc[dimension].append(node)
-
-        min_index = {'A': min(self.free_Loc['A']), 'B': min(self.free_Loc['B']), 'C': min(self.free_Loc['C']),
-                     'D': min(self.free_Loc['D'])}
-        max_index = {'A': max(self.free_Loc['A']), 'B': max(self.free_Loc['B']), 'C': max(self.free_Loc['C']),
-                     'D': max(self.free_Loc['D'])}
-
-        name = 'LocationAssignment'  # 初始化name
+        name = 'LocationAssignment_Aisles'  # 初始化name
         M = 4  # 初始化M,目标维数
-        Dim = len(self.pending_Loc)  # 初始化Dim,决策变量维数=待入库货物数量
+        # Dim = len(self.pending_Loc.keys())  # 初始化Dim,决策变量维数=待入库货物数量
+        # Dim = len(self.asiles)  # 初始化Dim,决策变量维数=货道数量490,但是其实可以缩小到待入库货物数量
+        Dim = n  # 初始化Dim,决策变量维数=100
         varTypes = [1] * Dim  # 初始化varTypes,决策变量的类型，0-连续，1-离散
         maxormins = [1] * M  # 目标最小化
-        pending_items = list(self.pending_Loc.values())
-        lb = [min_index[item['dimension']] for item in pending_items]
-        ub = [max_index[item['dimension']] for item in pending_items]
+        # pending_items = list(self.pending_Loc.values())
+        # 变量范围（货道ID的最小最大值）
+        aisle_ids = list(self.asiles.keys())
+        lb = [min(aisle_ids)] * Dim  # 变量下界
+        ub = [max(aisle_ids)] * Dim   # 变量上界
         lbin = [1] * Dim  # 决策变量包含下边界
         ubin = [1] * Dim  # 决策变量包含上边界
 
-        # print('min_index:', min_index)
-        # print('max_index:', max_index)
-        # print("lb:", lb)
-        # print("ub:", ub)
-        # print("lbin:", len(lbin), 'ubin:', len(ubin), 'varTypes:', len(varTypes))
+
+        print("lbin:", len(lbin), 'ubin:', len(ubin), 'varTypes:', len(varTypes))
         # 调用父类构造函数
-        ea.Problem.__init__(self, name, M, maxormins, Dim, varTypes, lb, ub, lbin, ubin)
+        ea.Problem.__init__(self, name=name, M=M,
+                            maxormins=maxormins, Dim=Dim, varTypes=varTypes,
+                            lb=lb, ub=ub, lbin=lbin, ubin=ubin)
 
     # 目标函数，pop为传入的种群对象
     def aimFunc(self, pop):
-        Vars = pop.Phen  # 得到决策变量矩阵
+        Vars = pop.Phen  # 得到决策变量矩阵,货道编号
+        # 建立索引到货道ID的映射
+        aisle_ids = np.array(self.free_aisles)
         # 使用 ndim 和 shape 属性获取矩阵的形状
-        # num_rows, num_cols = Vars.shape
-
-        F1 = self.cal_Center_Gravity(Vars)          # 计算质量重心
-        F2 = self.cal_Efficiency(Vars)              # 效率
-        F3 = self.cal_Balanced_distribution(Vars)   # 均衡分布
-        F4 = self.cal_Cargo_relatedness(Vars)       # 货物相关性
-        # print("F1:",F1)
-        # print("F2:",F2)
-        # print("F3:",F3)
-        # print("F4:",F4)
-        # 合并目标函数值
-        pop.ObjV = np.hstack([F1, F2, F3, F4])  #水平堆叠数组（即按列方向堆叠）
-        # pop.CV = [0] * pop.sizes            # 约束条件值
-
-    '''计算仓库中所有货物的重心,返回目标函数值F1，列向量'''
-    def cal_Center_Gravity(self, Vars):
-        """
-       计算种群中每个个体的垂直重心
-       :param Vars: 决策变量矩阵 (num_individuals, num_pending)
-       :return: 重心数组 (num_individuals, 1)
-       """
-        # 使用 ndim 和 shape 属性获取矩阵的形状
-        # num_rows, num_cols = Vars.shape
-        # 创建num_rows行的矩阵，每行元素初始化为0，存储目标函数值
-        # F1 = np.zeros((num_rows, 1))
-        # print('history_z_moment:', self.history_z_moment, '  history_total_mass:', self.history_total_mass)
-
-        # 决策变量的解析
-        pending_items = list(self.pending_Loc.values())  # 获取待入库货物列表
-        pending_qualities = np.array([item['quality'] for item in pending_items])
-        total_pending_mass = np.sum(pending_qualities)
-        # 计算总质量
-        total_mass = self.history_total_mass + total_pending_mass
-        if total_mass == 0:
-            warnings.warn("Total mass is 0，cal_Center_Gravity() return n行1列的0矩阵!")
-            return np.zeros((Vars.shape[0], 1))  # 所有重心为0
-        # 将Vars中的节点转换为层中心的矩阵
-        layer_centers = np.vectorize(lambda node: self.node_centers[node])(
-            Vars)  # 使用了 numpy 库中的 vectorize 函数来简化对 Vars 矩阵中每个元素的操作
-        # 计算每个个体的总质量矩（待入库部分）
-        z_moments = np.dot(layer_centers, pending_qualities)
-        # print('layer_centers:', layer_centers)
-        # print('pending_qualities:', pending_qualities, 'z_moments:', z_moments)
-        # 个体的质量矩 + 历史质量矩
-        total_z_moments = z_moments + self.history_z_moment
-        # 计算重心 保留3位小数 -1 表示根据数组的长度自动计算行数，而列数被显式地指定为 1。
-        F1 = np.round(total_z_moments / total_mass, 3).reshape((-1, 1))  # 保留3位小数，并转为列向量
-        return F1
-
-    # todo '''均衡分布：货道X,Y,Z方向上的周转率之和表示拥挤程度，标准差反应均衡程度'''
-    def cal_Balanced_distribution(self, Vars):
-        num_individuals = Vars.shape[0]  # 种群规模
-        F3 = np.zeros(num_individuals)  # 初始化目标函数
-        # 获取待入库货物的周转率列表
-        pending_items = list(self.pending_Loc.values())
-        # pending_rates = [item['rate'] for item in pending_items]
-        def calculate_variance(values):
-            """计算方差（样本方差，分母为n-1）"""
-            if len(values) < 2:
-                # print("样本数小于2，无法计算方差！")
-                return 0.0
-            mean = sum(values) / len(values)
-            variance = sum((x - mean) ** 2 for x in values) / (len(values) - 1)
-            return variance
-        # 解析决策变量矩阵
+        num_individuals, num_cols = Vars.shape
+        total_objectives = np.zeros((num_individuals, 4))  # 存储四个目标函数值
+        # pop.CV = np.zeros((num_individuals, 1))
+        # 步骤3：解码
+        '''=========解码过程=========='''
+        # 将货道分配转换为货位分配
         for i in range(num_individuals):
-            # 复制历史数据
-            current_x = defaultdict(float, self.history_rates['x'])
-            current_y = defaultdict(float, self.history_rates['y'])
-            current_z = defaultdict(float, self.history_rates['z'])
-            # 解析当前个体的分配方案
-            for j in range(Vars.shape[1]):          # 遍历一行中货位分配方案
-                node = Vars[i, j]                   # 分配的货位节点
-                rate = pending_items[j]['rate']     # 周转率
-                x, y, z = self.pos[node]            # 获取排(x)、列(y)、层(z)坐标
-                # 累加周转率
-                current_x[y] += rate
-                current_y[x] += rate
-                current_z[z] += rate
-                # print("分配货位：",node," 周转率：",rate," 坐标：",x,y,z," 当前周转率：",current_x[y],current_y[x],current_z[z])
-            # 计算方差（标准差公式中的分子部分）
-            s_x = calculate_variance(list(current_x.values()))
-            s_y = calculate_variance(list(current_y.values()))
-            s_z = calculate_variance(list(current_z.values()))
-            F3[i] = s_x + s_y + s_z
-            # print("个体：", i, " 的均衡分布："," s_x:",s_x," s_y:",s_y," s_z:",s_z," F3:", F3[i])
-        return F3.reshape((-1, 1))  # 转为列向量
-
-    # '''货物相关性：降低高相关货物层间相关性，分层存储'''
-    def cal_Cargo_relatedness(self, Vars):
-        num_individuals = Vars.shape[0]  # 种群规模
-        F4 = np.zeros(num_individuals)  # 初始化目标函数
-        for i in range(num_individuals):
-            allocation = {j: Vars[i, j] for j in range(Vars.shape[1])}  # 解析当前个体的分配方案  入库列表索引：分配货位节点ID
-            # print("分配方案：", allocation)
-            #layer_items每层存储的是SKU列表，后续计算时可以直接使用这些SKU进行相关性查询
-            layer_skus = defaultdict(list)  #  # 按层存储SKU   层 1 ：[1,2,2,3,4,1...]；层 2 ：[1,1,3,4,4,...]
-            # # 添加历史货物（直接使用预计算的层信息）
-            for item_id, item_data in self.history_Loc.items():
-                node = item_data['location_node']    # 分配的货位节点
-                sku = item_data['sku']
-                layer = self.pos[node][2]
-                layer_skus[layer].append(sku)
-            # 添加待入库货物   在处理历史货物时，应该获取其SKU，而不是直接使用item_id
-            for j, node in allocation.items():
-                # print("待入库货物：",j," 分配节点：",node)
-                layer = self.pos[node][2]
-                sku = self.pending_Loc[j]['sku']
-                layer_skus[layer].append(sku)
-            #计算每层的相关性总和（仅遍历n1 < n2）
-            total_correlation = 0.0
-            for layer, skus in layer_skus.items():
-                # print("layer:",layer, "skus:", skus)
-                # 统计当前层各SKU的出现次数
-                sku_counts = defaultdict(int)
-                for sku in skus:
-                    sku_counts[sku] += 1
-                # 将SKU列表转为唯一有序列表，避免重复计算
-                unique_skus = sorted(sku_counts.keys())
-                n_skus = len(unique_skus)
-                # 计算不同SKU间的组合相关性
-                for i_idx in range(n_skus):
-                    sku1 = unique_skus[i_idx]
-                    count1 = sku_counts[sku1]
-                    for j_idx in range(i_idx + 1, n_skus):
-                        sku2 = unique_skus[j_idx]
-                        count2 = sku_counts[sku2]
-                        # 获取相关性，处理缺失值
-                        # corr = self.correlation_matrix.get(sku1, {}).get(sku2, 0)
-                        corr = self.correlation_matrix[sku1][sku2]
-                        total_correlation += corr * count1 * count2
-                # print("layer:",layer , total_correlation)
-            F4[i] = total_correlation
-            # print("个体：", i, " 的相关性：", total_correlation)
-        return F4.reshape((-1, 1))  # 转为列向量
-
-
-    # todo: 提升机选择、出入库口选择、路径规划考虑冲突？
-    '''货物出入库时间乘以周转率表征出入库效率'''
-    def cal_Efficiency(self, Vars):
-        # 路径规划--》选择提升机、出入库口（排队论？）
-        # 效率 = 路径时间 * 周转率
-        num_individuals = Vars.shape[0]  # 种群规模
-        F2 = np.zeros(num_individuals)  # 初始化目标函数
-        pending_items = list(self.pending_Loc.values())
-        # pending_rates = np.array([item['rate'] for item in pending_items])
-        # 解析决策变量矩阵
-        for i in range(num_individuals):
-            total_efficiency = 0
-            for j in range(Vars.shape[1]):  # 遍历一行中货位分配方案
-                item = pending_items[j]  # 待入库货物
-                rate = item['rate']  # 周转率
-                enter_node = item['enter_node']  # 入库节点
-                loc_node = Vars[i, j]  # 分配的货位节点
-                if enter_node == loc_node:
-                    continue  # 入口点和货位相同，无需移动
-                try:
-                    # todo 寻路算法有待替换
-                    # path = nx.shortest_path(self.TopoGraph, enter_node, loc_node, weight='weight')
-                    path, cost, explored = self.path_planning.A_star(self.TopoGraph, enter_node, loc_node,heuristic_index = 1, weight='weight')
-                except nx.NetworkXException:
-                    total_time = 1e6  # 路径不存在，赋予高惩罚值
+            #分配节点
+            nodes = self.node_sku_map.keys()
+            for node in nodes:#复位状态
+                self.TopoGraph.nodes[node]['status'] = 0
+                # print("节点", node, "复位状态")
+            self.node_sku_map = {}  # 清空节点-SKU映射表
+            # 新增：每个个体处理前重置状态
+            # 初始化每一代的货位分配结果
+            allocated_nodes = []
+            permutation  = Vars[i, :]
+            unique_aisles = np.unique(permutation)
+            decoded_aisles = [aisle_ids[idx] for idx in unique_aisles if idx < len(aisle_ids)]            # 遍历每个货物SKU（假设pending_Loc按SKU组织）
+            for sku, sku_data in self.pending_Loc.items():
+                dimension = sku_data['dimension']
+                num_needed = sku_data['num']
+                # 遍历解码后的货道序列
+                for aisle_id in decoded_aisles:
+                    aisle = self.asiles[aisle_id]
+                    # 分配货位
+                    selected = self.select_location(
+                        sku, aisle_id, dimension, num_needed
+                    )
+                    if selected:
+                        allocated_nodes.extend(selected)
+                        num_needed -= len(selected)
+                        if num_needed <= 0:
+                            break
+                # 若仍未分配完，尝试其他空闲货道
+                if num_needed > 0:
+                    for aisle_id in self.free_aisles:
+                        if aisle_id not in decoded_aisles and self.asiles[aisle_id]['capacity'] >= num_needed:
+                            selected = self.select_location(sku, aisle_id, dimension, num_needed)
+                            if selected:
+                                allocated_nodes.extend(selected)
+                                num_needed -= len(selected)
+                                if num_needed <= 0:
+                                    break
+                # 未分配完的SKU记录惩罚
+                if num_needed > 0:
+                    pop.CV[i, 0] += num_needed  # 记录约束违反值
+                    print(f"SKU {sku} 未完全分配，剩余 {num_needed} 个")
+            # print("第", i, "个个体分配结果：", allocated_nodes," 货位数：", len(allocated_nodes))
+            # free_num = sum(1 for s in nx.get_node_attributes(self.TopoGraph, 'status').values() if s == 0)
+            # print("空闲货位数：", free_num)
+            # 计算目标函数（需传递allocated_nodes）当分配失败时，返回一个高惩罚值
+            if len(allocated_nodes) == 0:
+                warnings.warn("No allocated nodes, return default objectives 0.0")
+                total_objectives[i, :] = [1e6, 1e5, 1e4, 1e3]  # Default value for empty input
+                continue
+            elif len(allocated_nodes) < num_needed:
+                warnings.warn("Allocated nodes less than needed, return default objectives 0.0")
+                total_objectives[i, :] = [1e6, 1e5, 1e4, 1e3]  # Default value for empty input
+                continue
+            F1 = self.cal_Center_Gravity_nodes(allocated_nodes)
+            F2 = self.cal_Efficiency_nodes(allocated_nodes)
+            F3 = self.cal_Balanced_distribution_nodes(allocated_nodes)
+            F4 = self.cal_Cargo_relatedness_nodes(allocated_nodes)
+            # print("\n 第 ",i," 个个体的目标函数值： F1:", F1,"F2:", F2,"F3:", F3)#,"F4:", F4
+            # 存储目标函数值
+            total_objectives[i, :] = [F1, F2, F3, F4]
+            # total_objectives[i, :] = [F1, F2]#, F3
+        normalized = np.zeros_like(total_objectives)
+        epsilon = 1e-10  # 小常数，避免除以零
+        for i in range(4):
+            obj_col = total_objectives[:, i]
+            #可能因目标值全相同而导致NAN
+            if np.all(total_objectives[:, i] == total_objectives[0, i]):  # 所有值相等
+                normalized[:, i] = 0
+            else:
+                min_val = obj_col.min()
+                max_val = obj_col.max()
+                if max_val - min_val < epsilon:  # 范围太小
+                    normalized[:, i] = 0.5
                 else:
-                    total_time = self.path_planning.cal_path_time(self.TopoGraph, path)  # 路径时间
-                    # print(
-                    #     f"item：{item}，入库节点{enter_node}到货位{loc_node}的最短路径{path}，时间：{total_time}，周转率：{rate}，效率：{total_time * rate}")
-                # 累加效率（时间乘以周转率）
-                total_efficiency += total_time * rate
-            # print("个体：", i, " 的效率：", total_efficiency)
-            F2[i] = total_efficiency
-        return F2.reshape((-1, 1))  # 转为列向量:-1 表示 NumPy 会根据数组的总元素数量自动计算合适的行数;1 表示重塑后的数组有1列。
+                    normalized[:, i] = (obj_col - min_val) / (max_val - min_val)
+                    # pop.ObjV = normalized.astype(float)
+                # min_val = total_objectives[:, i].min()
+                # max_val = total_objectives[:, i].max()
+                # normalized[:, i] = (total_objectives[:, i] - min_val) / (max_val - min_val + epsilon)
+        # 将计算结果赋值给目标函数矩阵
+        pop.ObjV = normalized.astype(float)  # 确保数据类型为浮点型
+        # pop.ObjV = total_objectives.astype(float)  # 确保数据类型为浮点型
+        # pop.CV = np.zeros((pop.sizes, 4))  # 若无约束，也需初始化空约束矩阵
 
-        # 计算路径时间=响应成本 + 执行成本：
-        # 非1楼需计算提升机时间=响应成本 + 执行成本
-    '''计算路径时间成本'''
-    # def cal_path_time(self, graph, path, Vmax,Acc,Dcc):
-    #     time_cost = 0
-    #     t_acc = Vmax/Acc   #加速时间
-    #     t_dcc = Vmax/Dcc   #减速时间
-    #     S_acc = Vmax**2/(2*Acc)   #从0加速到最大速度所需距离
-    #     S_dcc = Vmax**2/(2*Dcc)    #从最大速度减速到0所需距离
-    #     S0 = S_dcc + S_acc   #临界距离
-    #     # print(f"t_acc={t_acc},t_dcc={t_dcc},S_acc={S_acc},S_dcc={S_dcc}，S0={S0}")
-    #     '''返回转向节点列表'''
-    #     def get_turn_nodes(graph,path):
-    #         turn_nodes = []
-    #         location = nx.get_node_attributes(graph, 'location')
-    #         threshold = 1.0
-    #         for i in range(1, len(path) - 1):
-    #             parent = path[i - 1]      # 前一个节点
-    #             current_node = path[i]    # 当前节点
-    #             next_node = path[i + 1]   # 下一个节点
-    #             parent_pos = location[parent]
-    #             next_pos = location[next_node]
-    #             delta_x = abs(parent_pos[0] - next_pos[0])  # x轴偏差
-    #             delta_y = abs(parent_pos[1] - next_pos[1])  # y轴偏差
-    #             # 判断是否在 x 和 y 轴上都超过阈值
-    #             if delta_x > threshold and delta_y > threshold:
-    #                 # print("delta_x :",delta_x,"delta_y :",delta_y)
-    #                 turn_nodes.append(current_node)
-    #         return turn_nodes
-    #
-    #     '''计算一段子路径时间'''
-    #     def cal_time(sub_path):
-    #         path_time = 0
-    #         length =  nx.path_weight(graph, sub_path, 'weight')
-    #         if length >= S0:      # 路径长度超过了从0加速到最大速度所需距离+从最大速度减速到0所需距离
-    #             constant_time = (length - S0)/Vmax   # 计算匀速时间
-    #             path_time += constant_time + t_acc + t_dcc   # 路径时间 = 匀速时间 + 加速时间 + 减速时间
-    #             print(f"足够长的距离加速,sub_path={sub_path},length={length},constant_time={constant_time},path_time={path_time}")
-    #         else: #匀加速到非最大速度后，立即做匀减速运动
-    #             t = math.sqrt(2*length*(1/Acc + 1/Dcc))
-    #             path_time += t
-    #             print(f"非最大速度，sub_path={sub_path},length={length},t={t},path_time={path_time}")
-    #         return path_time
-    #
-    #     #二维列表，存储划分后的路径
-    #     result = []
-    #     #引入转向节点列表
-    #     turn_nodes = get_turn_nodes(graph,path)
-    #     start_index = 0
-    #     #遍历分割点
-    #     for point in turn_nodes:
-    #         # 找到分割点在原列表中的索引
-    #         index = path.index(point,start_index)   #从start_index开始查找
-    #         # 将从上次开始索引到当前分割点的子列表添加到结果列表中
-    #         sub_path = path[start_index:index+1]       #加1，以包含 index 所指向的元素。
-    #         result.append(sub_path)
-    #         # 计算子路径时间
-    #         time_cost += cal_time(sub_path)
-    #         # # 更新开始索引
-    #         start_index = index
-    #     if start_index < len(path):  # 处理最后一段路径.（即 start_index 仍然指向路径中的某个位置）
-    #         sub_path = path[start_index:]
-    #         result.append(sub_path)
-    #         time_cost += cal_time(sub_path)
-    #     turn_count = len(turn_nodes)  # 计算转向次数
-    #     turn_time = turn_count * Switching_time  # 计算转向时间
-    #     time_cost += turn_time  # 路径时间 = 路径时间 + 转向时间
-    #     # print(f"分割点列表：{result}"," , 转向次数：{turn_count} ",turn_count,"，转向时间：{turn_time}",turn_time,"，路径时间：{time_cost}",time_cost)
-    #     return time_cost
+    """根据货道ID和货物类型,选择分配的货位节点列表（深度优先存储）"""
+    def select_location(self,sku, aisle_id, dimension,num_needed):
+        """
+       从指定货道中选择指定数量的空闲货位
+       :param aisle_id: 货道ID
+       :param dimension: 货物类型（需与货道type匹配）
+       :param num_needed: 需要分配的货位数
+       :return: 分配的货位节点列表
+       """
+        aisle = self.asiles.get(aisle_id, None)
+        if not aisle:
+            print(f"货道 {aisle_id} 不存在")
+            return []
+        aisle_nodes = aisle['nodes']
+        status = nx.get_node_attributes(self.TopoGraph, 'status')
+        available_nodes = [node for node in aisle_nodes if status[node] == 0]
+        capacity = aisle['capacity']
+        if not available_nodes:
+            print(f"货道 {aisle_id} 无可用货位")
+            return []
+        pos = nx.get_node_attributes(self.TopoGraph, 'pos')
+        # 获取货道内的货位列表
+        # 获取货道内未分配的货位（假设已预先生成空闲货位列表）
+        type = self.asiles[aisle_id]['type']    # 货道类型
+        # 计算可分配的货位数
+        num_available = min(len(available_nodes), num_needed)
+        # 按深度优先存储分配货位
+        # if type == 0:#中位存储
+        #      pass
+        if type == -1:#向左存储
+            # 按列升序选择货位
+            selected = sorted(available_nodes, key=lambda node: pos[node][1])[:num_available]
+        else:#向右存储
+            # 按列降序选择货位
+            selected = sorted(available_nodes, key=lambda node: pos[node][1], reverse=True)[:num_available]
+        # print("sku: ",sku," num_needed: ",num_needed,"  aisle_id：", aisle_id,"  dimension：", dimension,"  selected: ",selected)
+        # 标记货位为已占用
+        for node in selected:
+            self.TopoGraph.nodes[node]['status'] = 1
+            self.node_sku_map[node] = sku  # current_sku为当前处理的SKU ID
+            capacity -= 1
+        # 更新货道容量
+        self.asiles[aisle_id]['capacity'] = capacity
+        return selected
 
-    # todo: 提升机的定义与初始话！
+    '''形参为分配的货位节点列表，返回目标函数值F2，标量值'''
+    def cal_Center_Gravity_nodes(self, allocated_nodes):
+        """
+        基于货位节点列表计算垂直质心（适配SKU多货物场景）
+        :param allocated_nodes: 当前个体分配的货位节点ID列表，如 [101, 205, 307]
+        :return: 质心高度（标量值）
+        """
+        if not allocated_nodes:
+            warnings.warn("Gravity-allocated_nodes is empty, return default centroid 0.0")
+            return 0.0  # Default value for empty input
+        total_moment = 0  # 质量矩
+        total_mass = 0    # 总质量
+        for node in allocated_nodes:
+            sku = self.node_sku_map[node]  # 获取货位对应的 SKU
+            quality = self.pending_Loc[sku]['quality']  # 当前 SKU 的质量
+            layer_center = self.node_centers[node]  # 货位中心坐标
+            total_moment += quality * layer_center
+            total_mass += quality
+        if total_mass == 0:
+            warnings.warn("Total mass is zero, returning default centroid 0.0")
+            return 0.0
+        centroid = total_moment / total_mass
+        return round(centroid, 3)
+        # total_moment = self.history_z_moment  # 历史货物质量矩
+        # total_mass = self.history_total_mass  # 历史货物总质量
+        # # === 遍历每个分配的货位节点 ===
+        # for node in allocated_nodes:
+        #     # 获取当前货位对应的SKU质量（通过预建立的映射关系）
+        #     sku = self.node_sku_map[node]          # 节点对应的SKU ID
+        #     quality = self.pending_Loc[sku]['quality']  # 从SKU信息获取质量
+        #
+        #     # 获取货位的层中心高度
+        #     layer_center = self.node_centers[node]
+        #
+        #     # 累加质量矩和质量
+        #     total_moment += quality * layer_center
+        #     total_mass += quality
+        #
+        # # === 处理边界条件 ===
+        # if total_mass == 0:
+        #     warnings.warn("Total mass is zero, return default centroid 0.0")
+        #     return 0.0
+        #
+        # # === 计算质心高度 ===
+        # centroid = total_moment / total_mass
+        # return round(centroid, 3)  # 保留3位小数
 
-    '''计算提升机时间成本=当前楼层-》取货楼层-》放货楼层'''
-    def cal_ele_time(self, current_floor, get_floor, put_floor, Vmax, Acc, Dcc):
-        time_cost = 0
-        # 计算提升机时间
-        t_acc = Vmax / Acc  # 加速时间
-        t_dcc = Vmax / Dcc  # 减速时间
-        S_acc = Vmax ** 2 / (2 * Acc)  # 从0加速到最大速度所需距离
-        S_dcc = Vmax ** 2 / (2 * Dcc)  # 从最大速度减速到0所需距离
-        S0 = S_dcc + S_acc  # 临界高度
-        # 获取当前楼层、取货楼层、放货楼层的高度
-        current_height = self.cumulative_heights[current_floor - 1]
-        get_height = self.cumulative_heights[get_floor - 1]
-        put_height = self.cumulative_heights[put_floor - 1]
+    def cal_Efficiency_nodes(self, allocated_nodes):
+        """
+       基于货位节点列表计算出入库效率（适配SKU多货物场景）
+       :param allocated_nodes: 分配的货位节点ID列表，如 [101, 205, 307]
+       :return: 总加权时间成本（标量值）
+       """
+        # 效率 = 路径时间 * 周转率
+        F2 = 0.0  # 初始化目标函数
+        pending_items = list(self.pending_Loc.values())
+        # === 遍历每个分配的货位节点 ===
+        for node in allocated_nodes:
+        # 1. 获取当前货位对应的SKU信息
+            sku_id = self.node_sku_map[node]  # 通过预建立的映射表获取SKU ID
+            sku_data = self.pending_Loc[sku_id]
+            # 2. 提取SKU参数
+            enter_node = sku_data["enter_node"]  # 入库点
+            rate = sku_data["rate"]              # 周转率
+            # 3. 跳过无效路径（入口点与货位相同）
+            if enter_node == node:
+                continue
 
-        # print(f"t_acc={t_acc},t_dcc={t_dcc},S_acc={S_acc},S_dcc={S_dcc}，S0={S0}")
-        def cal_time(height_diff):
-            if height_diff >= S0:  # 高度超过了从0加速到最大速度所需距离+从最大速度减速到0所需距离
-                constant_time = (height_diff - S0) / Vmax  # 计算匀速时间
-                time_cost = constant_time + t_acc + t_dcc  # 路径时间 = 匀速时间 + 加速时间 + 减速时间
-                # print(f"足够长的高度加速,height_diff={height_diff},constant_time={constant_time},time_cost={time_cost}")
-            else:  # 匀加速到非最大速度后，立即做匀减速运动
-                time_cost = math.sqrt(2 * height_diff * (1 / Acc + 1 / Dcc))
-                # print(f"非足够高度，height_diff={height_diff},time_cost={time_cost}")
-            return time_cost
+            # 4. 计算路径时间
+            try:
+                path, _, _ = self.path_planning.A_star(
+                    self.TopoGraph,
+                    enter_node,
+                    node
+                )
+                time = self.path_planning.cal_path_time(self.TopoGraph, path)
+            except nx.NetworkXException:  # 路径不存在
+                    time = 1e6  # 高惩罚值
 
-        # 计算响应成本：当前楼层-》取货楼层
-        if current_floor == get_floor:  # 当前楼层等于取货楼层
-            phase1 = 0
-        else:  # 当前楼层不等于取货楼层
-            height_diff = abs(get_height - current_height)
-            phase1 = cal_time(height_diff)
-        # 计算执行成本：取货楼层-》放货楼层
-        height_diff = abs(put_height - get_height)
-        phase2 = cal_time(height_diff)
-        # 总时间
-        time_cost = phase1 + phase2
-        return time_cost
+            # 5. 累加效率值（时间 × 周转率）
+            F2 += time * rate
+        return F2
+
+    def cal_Balanced_distribution_nodes(self, allocated_nodes):
+        """
+        基于货位节点列表计算周转率均衡分布（适配SKU多货物场景）
+        :param allocated_nodes: 分配的货位节点ID列表，如 [101, 205, 307]
+        :return: 周转率分布方差总和（标量值）
+        """
+        if not allocated_nodes:
+            return 0.0  # Default value for empty input
+        # === 计算各维度方差 ===
+        def safe_variance(values):
+            """安全计算方差（处理样本数不足的情况）"""
+            n = len(values)
+            if n < 2:
+                return 0.0
+            mean = sum(values) / n
+            return sum((x - mean)**2 for x in values) / (n - 1)
+        current_x = defaultdict(float)  # X 方向周转率
+        current_y = defaultdict(float)  # Y 方向周转率
+        current_z = defaultdict(float)  # Z 方向周转率
+        for node in allocated_nodes:
+            x, y, z = self.pos[node]  # 货位坐标
+        sku_id = self.node_sku_map[node]  # SKU ID
+        rate = self.pending_Loc[sku_id]['rate']  # 当前 SKU 周转率
+        current_x[y] += rate
+        current_y[x] += rate
+        current_z[z] += rate
+
+        var_x = safe_variance(list(current_x.values()))
+        var_y = safe_variance(list(current_y.values()))
+        var_z = safe_variance(list(current_z.values()))
+
+        return var_x + var_y + var_z
+
+
+    def cal_Cargo_relatedness_nodes(self, allocated_nodes):
+        """
+        基于货位节点列表计算层内SKU相关性（适配SKU多货物场景）
+        :param allocated_nodes: 分配的货位节点ID列表，如 [101, 205, 307]
+        :return: 层内SKU相关性总和（标量值）
+        """
+        total_correlation = 0.0
+        # === 1. 构建层-SKU分布（含历史数据） ===
+        layer_skus = defaultdict(list)  # {层号: [SKU1, SKU2, ...]}
+        # 添加当前分配货物
+        for node in allocated_nodes:
+            layer = self.pos[node][2]
+            sku_id = self.node_sku_map[node]  # 通过映射表获取SKU
+            layer_skus[layer].append(sku_id)
+        # === 2. 计算各层相关性 ===
+        for layer, skus in layer_skus.items():
+            # 统计SKU出现次数
+            sku_counter = defaultdict(int)
+            for sku in skus:
+                sku_counter[sku] += 1
+            # 生成唯一有序SKU列表
+            unique_skus = sorted(sku_counter.keys())
+            n = len(unique_skus)
+            # 遍历所有SKU组合 (i < j)
+            for i in range(n):
+                sku1 = unique_skus[i]
+                count1 = sku_counter[sku1]
+                for j in range(i+1, n):
+                    sku2 = unique_skus[j]
+                    count2 = sku_counter[sku2]
+                    # 获取相关性系数
+                    corr = self.correlation_matrix[sku1][sku2]
+                    total_correlation += corr * count1 * count2
+        return total_correlation
+
 
     """生成货物相关性矩阵"""
     def _generate_relatedness_matrix(self,sku_items):
@@ -439,52 +437,28 @@ class LocationAssignment_Aisles(ea.Problem):
             node_centers[node] = current_layer_center  # 节点的层中心。在后续处理中，只需要通过节点编号直接获取层中心值，而不需要每次重新计算。
         return node_centers
 
-    '''预计算历史货物层信息'''
-    def _precompute_history_layers(self):
-        """预计算历史货物所在层（z坐标）"""
-        # history_layers = []  # 历史货物所在层（z坐标）
-        for item_id, item_data in self.history_Loc.items():
-            node = item_data['location_node']    # 分配的货位节点
-            z = self.pos[node][2]  # 获取层信息（z坐标）
-            self.history_layers[item_id] = z
-        return self.history_layers
-
-    """预计算历史货物在各轴的周转率分布"""
-    def _precompute_history_rates(self):
-        history_rates = {'x': defaultdict(float), 'y': defaultdict(float), 'z': defaultdict(float)}
-        #遍历历史货物，计算各轴的周转率分布
-        for item in self.history_Loc.values():
-            node = item['location_node']
-            rate = item['rate']
-            x, y, z = self.pos[node]
-            history_rates['x'][y] += rate    # 累加 x 轴的周转率
-            history_rates['y'][x] += rate    # 累加 y 轴的周转率
-            history_rates['z'][z] += rate    # 累加 z 轴的周转率
-        return history_rates
-
-    """预计算历史货物的质量矩和总质量"""
-    def _precompute_history(self):
-        history_z_moment = 0  # 历史货物质量矩
-        history_total_mass = 0  # 历史货物总质量
-        # 计算历史货物的质量
-        for item in self.history_Loc.values():
-            quality = item['quality']
-            node = item['location_node']
-            current_layer_center = self.node_centers[node]  # 前z-1层总高度+当前层高度/2
-            history_z_moment += quality * current_layer_center
-            history_total_mass += quality
-        return history_z_moment, history_total_mass
 
     '''========================以下为辅助函数=========================='''
-    # 生成入库数据,随机生成Num个待入库货物
-    def generateItems(self, Num):
+    '''根据货道编解码的入库数据生成待入库货物
+    {SKU:(enter_node,num,rate,quality,dimension)}
+    sku_items: 待入库SKU总数
+    Num: 待入库货物数量总数
+    '''
+    def generateItems_asisles(self,sku_items ,Num):
         np.random.seed(42)      # 设置随机种子
         pending_Loc = {}
-        # item_id = random.randint(1, 1000)       #随机起始ID
-        item_id = 0
         sku_num = self.correlation_matrix.shape[0]   # SKU种类数
-        # 随机生成Num个待入库货物
-        for i in range(Num):
+        remaining_Num = Num  # 剩余需要分配的数量
+        avg_num = remaining_Num // sku_items  # 平均分配数量
+        #将NUM依次随机消耗掉，直到所有SKU都被消耗完
+        for i in range(sku_items):
+            if i == sku_items-1:
+                num = remaining_Num
+            else:
+                num = np.random.randint(int(avg_num*0.5), avg_num+1)
+            sku = random.randint(0, sku_num-1)   # 随机选择SKU
+            while sku in pending_Loc:  # 如果重复，重新选择
+                sku = random.randint(0, sku_num - 1)
             rate = round(np.random.uniform(0.01, 1), 2)  # 随机生成周转率
             dimension = np.random.choice(['A', 'B', 'C', 'D'])  # 随机选择货物类型
             enter_node = random.choice(self.enter_node)  # 随机选择入库口
@@ -494,42 +468,18 @@ class LocationAssignment_Aisles(ea.Problem):
                 quality = np.random.randint(150, 201)  # D，质量值将在 150 到 200 之间随机生成
             else:
                 quality = np.random.randint(51, 150)  # 对于 B 和 C，质量值在 51 到 150 之间
-            pending_Loc[item_id] = {
+            pending_Loc[sku] = {
                 'enter_node': enter_node,
                 'rate': rate,
                 'quality': quality,
                 'dimension': dimension,
-                'sku': np.random.randint(0, sku_num)  # 随机选择SKU
+                'num':num
             }
-            item_id += 1
+            remaining_Num -= num  # 更新剩余需要分配的数量
         self.pending_Loc = pending_Loc
         return pending_Loc
 
-    # 添加新的历史记录：质量、周转率、类型和存储货位节点
-    def add_history(self, item_id, quality, turnover_rate, dimension, location_node):
-        self.history_Loc[item_id] = {
-            'quality': quality,
-            'rate': turnover_rate,
-            'dimension': dimension,
-            'location_node': location_node
-        }
 
-    # 根据货物id删除特定货物的历史信息
-    def remove_item_history(self, item_id):
-        if item_id in self.history_Loc:
-            del self.history_Loc[item_id]
-        else:
-            print("No such item in history，cannot delete!")
-
-    # 设置历史已存储信息
-    def set_history_Loc(self, history_Loc):
-        self.history_Loc = history_Loc
-        # 预计算 历史货物的质量矩,历史货物的总质量
-        self.history_z_moment, self.history_total_mass = self._precompute_history()
-        # 预计算历史周转率分布
-        self.history_rates = self._precompute_history_rates()
-        # 预计算历史货物所在层
-        self._precompute_history_layers()
 
     # 设置模型对象
     def set_model(self, model):
@@ -552,6 +502,7 @@ class LocationAssignment_Aisles(ea.Problem):
         self.cumulative_heights = [0] * len(heights)
         for i in range(len(heights)):
             self.cumulative_heights[i] = sum(heights[:i])
+        # print(f"cumulative_heights={self.cumulative_heights}")
         # 预计算节点的中心高度
         self.node_centers = self._precompute_node_centers()
 
@@ -569,46 +520,50 @@ if __name__ == '__main__':
     loc.set_model(model)                    # 设置模型对象
     loc.set_path_planning(path_planning)    # 设置路径规划对象
     correlation = loc._generate_relatedness_matrix(10)  # 生成模拟的货物相关性矩阵（0~1，1表示完全相关）
-    test_items = loc.generateItems(10)      # 生成待入库货物信息
-    # print(correlation)                    # 打印相关性矩阵
-    # print(test_items)                     # 打印待入库货物信息
-    # aisles = model.combined_graph.graph['aisles']
-    print(loc.asiles)
+    test_items = loc.generateItems_asisles(5,100)      # 生成待入库货物信息
+    print(correlation)                    # 打印相关性矩阵
+    print(test_items)                     # 打印待入库货物信息
+
     # '''========================初始化问题================'''
-    # problem = loc.initProblem()  # 初始化问题
-    #
+    problem = loc.initProblem()  # 初始化问题
+
     # '''========================种群设置================'''
-    # Encoding = 'RI'  # 编码方式: 'BG'表示采用二进制/格雷编码，'RI'表示采用离散/整数编码;'P' 排列编码，即染色体每一位的元素都是互异的
-    # NIND = 100 # 种群规模
-    # Field = ea.crtfld(Encoding, loc.varTypes, loc.ranges, loc.borders) #译码矩阵 创建区域描述器
-    # population = ea.Population(Encoding, Field, NIND) # 实例化种群对象（此时种群还没被真正初始化，仅仅是生成一个种群对象）
-    # """===========================算法参数设置=========================="""
-    # #实例化一个算法模板对象
-    # algorithm = ea.moea_NSGA2_templet(loc, population)
-    # algorithm.MAXGEN = 1000        # 最大进化代数
-    # algorithm.mutOper.CR = 0.2     # 修改变异算子的变异概率
-    # algorithm.recOper.XOVR = 0.9   # 修改交叉算子的交叉概率
-    # algorithm.logTras = 1          # 设置每隔多少代记录日志，若设置成0则表示不记录日志
-    # algorithm.verbose = True       # 设置是否打印输出日志信息
-    # algorithm.drawing = 1          # 设置绘图方式（0：不绘图；1：绘制结果图；2：绘制目标空间过程动画；3：绘制决策空间过程动画）
+    Encoding = 'RI'  # 编码方式: 'BG'表示采用二进制/格雷编码，'RI'表示采用离散/整数编码;'P' 排列编码，即染色体每一位的元素都是互异的
+    NIND = 50 # 种群规模
+    Field = ea.crtfld(Encoding, loc.varTypes, loc.ranges, loc.borders) #译码矩阵 创建区域描述器
+    population = ea.Population(Encoding, Field, NIND) # 实例化种群对象（此时种群还没被真正初始化，仅仅是生成一个种群对象）
+    """===========================算法参数设置=========================="""
+    #实例化一个算法模板对象
+    algorithm = ea.moea_NSGA2_templet(loc, population)
+    algorithm.MAXGEN = 100        # 最大进化代数1000
+    algorithm.mutOper.CR = 0.2     # 修改变异算子的变异概率
+    algorithm.recOper.XOVR = 0.9   # 修改交叉算子的交叉概率
+    algorithm.logTras = 1          # 设置每隔多少代记录日志，若设置成0则表示不记录日志
+    algorithm.verbose = True       # 设置是否打印输出日志信息
+    algorithm.drawing = 1          # 设置绘图方式（0：不绘图；1：绘制结果图；2：绘制目标空间过程动画；3：绘制决策空间过程动画）
     # """==========================调用算法模板进行种群进化==============="""
     # '''调用run执行算法模板，得到帕累托最优解集NDSet以及最后一代种群。
     # NDSet是一个种群类Population的对象。
     # NDSet.ObjV为最优解个体的目标函数值；NDSet.Phen为对应的决策变量值。'''
-    # [NDSet, population] = algorithm.run() #执行算法模板，得到非支配种群以及最后一代种群
+    #使用启发式方法初始化种群，优先选择容量较大的货道
+    sorted_aisles = sorted(loc.asiles.keys(), key=lambda x: loc.asiles[x]['capacity'], reverse=True)
+    initial_phen = np.array([sorted_aisles[:loc.Dim] for _ in range(NIND)])
+    population.Phen = initial_phen
+    algorithm.paretoFront = ref_front  # 使用最终解集作为参考前沿
+    [NDSet, population] = algorithm.run() #执行算法模板，得到非支配种群以及最后一代种群
     # NDSet.save() # 把非支配种群的信息保存到文件中
     #
     # """=================================输出结果======================="""
-    # print('用时：%s 秒' % algorithm.passTime)
-    # print('非支配个体数：%d 个' % NDSet.sizes) if NDSet.sizes != 0 else print('没有找到可行解！')
-    # if algorithm.log is not None and NDSet.sizes != 0:
-    #     print('GD', algorithm.log['gd'][-1])
-    #     print('IGD', algorithm.log['igd'][-1])
-    #     print('HV', algorithm.log['hv'][-1])
-    #     print('Spacing', algorithm.log['spacing'][-1])
-    # """======================进化过程指标追踪分析=================="""
-    # metricName = [['igd'], ['hv']]
-    # Metrics = np.array([algorithm.log[metricName[i][0]] for i in
-    #                     range(len(metricName))]).T
-    # # 绘制指标追踪分析图
-    # ea.trcplot(Metrics, labels=metricName, titles=metricName)
+    print('用时：%s 秒' % algorithm.passTime)
+    print('非支配个体数：%d 个' % NDSet.sizes) if NDSet.sizes != 0 else print('没有找到可行解！')
+    if algorithm.log is not None and NDSet.sizes != 0:
+        print('GD', algorithm.log['gd'][-1])
+        print('IGD', algorithm.log['igd'][-1])
+        print('HV', algorithm.log['hv'][-1])
+        print('Spacing', algorithm.log['spacing'][-1])
+    """======================进化过程指标追踪分析=================="""
+    metricName = [['igd'], ['hv']]
+    Metrics = np.array([algorithm.log[metricName[i][0]] for i in
+                        range(len(metricName))]).T
+    # 绘制指标追踪分析图
+    ea.trcplot(Metrics, labels=metricName, titles=metricName)

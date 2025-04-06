@@ -1,8 +1,12 @@
 # -*- coding: utf-8 -*-
 # from matplotlib.backends.backend_qt5 import NavigationToolbar2QT as NavigationToolbar
 # from PyQt5.QtWidgets import QWidget
+import random
+
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as  NavigationToolbar
 from PyQt5 import QtCore, QtGui, QtWidgets
+
+from MultyAGV.MultiVehiclePathPlanner import MultiVehiclePathPlanner
 from Program.DataModel import Model
 from Algorithm.PathPlanning import Path_Planning
 from Program.graph_Canvas import graph_FigureCanvas,ResultsDialog
@@ -29,6 +33,10 @@ class Ui_MainWindow(object):
         # self.path_planing = Path_Planning(self.floor_Canvas_list)
         self.path_planing = Path_Planning(self.model)
 
+        # 新增：AGV和任务管理
+        self.agvs = []  # 存储AGV，格式 [{'id': int, 'pos': int, 'status': 'idle'}, ...]
+        self.tasks = []  # 存储任务，格式 [{'id': int, 'source': int, 'target': int, 'priority': int, 'time_window': (start, end), 'agv_id': int}, ...]
+        self.planner = MultiVehiclePathPlanner(self.maps[3], self.agvs, self.tasks)  # 使用全景地图初始化规划器
         # MainWindow.setMinimumHeight(900)
         # MainWindow.setMinimumWidth(1500)
         # MainWindow.showMaximized()
@@ -166,6 +174,85 @@ class Ui_MainWindow(object):
         self.verticalLayout_3.setObjectName("verticalLayout_3")
         self.Task_gridLayout = QtWidgets.QGridLayout()
         self.Task_gridLayout.setObjectName("Task_gridLayout")
+
+        # 随机添加任务按钮
+        self.random_AddTask = QtWidgets.QPushButton(self.Task_groupBox)
+        font = QtGui.QFont()
+        font.setPointSize(14)
+        self.random_AddTask.setFont(font)
+        self.Task_gridLayout.addWidget(self.random_AddTask, 0, 0, 1, 2)
+
+        # 起点
+        self.start_label = QtWidgets.QLabel(self.Task_groupBox)
+        font = QtGui.QFont()
+        font.setPointSize(13)
+        self.start_label.setFont(font)
+        self.start_label.setAlignment(QtCore.Qt.AlignCenter)
+        self.Task_gridLayout.addWidget(self.start_label, 1, 0, 1, 1)
+        self.start_spinBox = QtWidgets.QSpinBox(self.Task_groupBox)
+        self.start_spinBox.setMinimumSize(QtCore.QSize(0, 20))
+        font = QtGui.QFont()
+        font.setPointSize(16)
+        self.start_spinBox.setFont(font)
+        self.start_spinBox.setAlignment(QtCore.Qt.AlignCenter)
+        self.start_spinBox.setMaximum(10000)
+        self.Task_gridLayout.addWidget(self.start_spinBox, 1, 1, 1, 1)
+
+        # 优先级（新增）
+        self.priority_label = QtWidgets.QLabel(self.Task_groupBox)
+        font = QtGui.QFont()
+        font.setPointSize(13)
+        self.priority_label.setFont(font)
+        self.priority_label.setAlignment(QtCore.Qt.AlignCenter)
+        self.priority_label.setText("优先级")
+        self.Task_gridLayout.addWidget(self.priority_label, 3, 0, 1, 1)
+        self.priority_spinBox = QtWidgets.QSpinBox(self.Task_groupBox)
+        self.priority_spinBox.setMinimumSize(QtCore.QSize(0, 20))
+        font = QtGui.QFont()
+        font.setPointSize(16)
+        self.priority_spinBox.setFont(font)
+        self.priority_spinBox.setAlignment(QtCore.Qt.AlignCenter)
+        self.priority_spinBox.setMinimum(1)  # 优先级从1开始
+        self.priority_spinBox.setMaximum(10)  # 最大优先级10
+        self.priority_spinBox.setValue(1)  # 默认值为1
+        self.Task_gridLayout.addWidget(self.priority_spinBox, 3, 1, 1, 1)
+
+        # 时间窗开始时间（新增）
+        self.time_window_start_label = QtWidgets.QLabel(self.Task_groupBox)
+        font = QtGui.QFont()
+        font.setPointSize(13)
+        self.time_window_start_label.setFont(font)
+        self.time_window_start_label.setAlignment(QtCore.Qt.AlignCenter)
+        self.time_window_start_label.setText("开始时间")
+        self.Task_gridLayout.addWidget(self.time_window_start_label, 4, 0, 1, 1)
+        self.time_window_start_spinBox = QtWidgets.QSpinBox(self.Task_groupBox)
+        self.time_window_start_spinBox.setMinimumSize(QtCore.QSize(0, 20))
+        font = QtGui.QFont()
+        font.setPointSize(16)
+        self.time_window_start_spinBox.setFont(font)
+        self.time_window_start_spinBox.setAlignment(QtCore.Qt.AlignCenter)
+        self.time_window_start_spinBox.setMaximum(10000)  # 时间单位可调整
+        self.time_window_start_spinBox.setValue(0)  # 默认开始时间0
+        self.Task_gridLayout.addWidget(self.time_window_start_spinBox, 4, 1, 1, 1)
+
+        # 时间窗结束时间（新增）
+        self.time_window_end_label = QtWidgets.QLabel(self.Task_groupBox)
+        font = QtGui.QFont()
+        font.setPointSize(13)
+        self.time_window_end_label.setFont(font)
+        self.time_window_end_label.setAlignment(QtCore.Qt.AlignCenter)
+        self.time_window_end_label.setText("结束时间")
+        self.Task_gridLayout.addWidget(self.time_window_end_label, 5, 0, 1, 1)
+        self.time_window_end_spinBox = QtWidgets.QSpinBox(self.Task_groupBox)
+        self.time_window_end_spinBox.setMinimumSize(QtCore.QSize(0, 20))
+        font = QtGui.QFont()
+        font.setPointSize(16)
+        self.time_window_end_spinBox.setFont(font)
+        self.time_window_end_spinBox.setAlignment(QtCore.Qt.AlignCenter)
+        self.time_window_end_spinBox.setMaximum(10000)
+        self.time_window_end_spinBox.setValue(100)  # 默认结束时间100
+        self.Task_gridLayout.addWidget(self.time_window_end_spinBox, 5, 1, 1, 1)
+        '''======================================'''
         self.start_spinBox = QtWidgets.QSpinBox(self.Task_groupBox)
         self.start_spinBox.setMinimumSize(QtCore.QSize(0, 20))
         font = QtGui.QFont()
@@ -300,7 +387,7 @@ class Ui_MainWindow(object):
         self.point_algorithm_comboBox.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToContentsOnFirstShow)
         self.point_algorithm_comboBox.setIconSize(QtCore.QSize(16, 20))
         self.point_algorithm_comboBox.setObjectName("point_algorithm_comboBox")
-        for i in range(0, 5):    # 添加四种算法 会生成序列 [0, 1, 2, 3]
+        for i in range(0, 8):    # 添加四种算法 会生成序列 [0, 1, 2, 3]
             self.point_algorithm_comboBox.addItem("")
         # self.point_algorithm_comboBox.addItem("")
         # self.point_algorithm_comboBox.addItem("")
@@ -403,8 +490,8 @@ class Ui_MainWindow(object):
         self.Target_Button.clicked.connect(self.handle_Target_Button)
         self.random_Add_Cases.clicked.connect(self.handle_random_Add_Cases_button)
         self.add_case.clicked.connect(self.handle_add_case_button)
-        self.random_AddTask.clicked.connect(self.handle_random_AddTask_button)
-        self.addTask.clicked.connect(self.handle_addTask_button)
+        self.random_AddTask.clicked.connect(self.randon_Add_Task)
+        self.addTask.clicked.connect(self.add_Task)
         self.random_addAGV.clicked.connect(self.handle_random_addAGV_button)
         self.addAGV.clicked.connect(self.handle_addAGV_button)
         self.point_AGV_comboBox.currentIndexChanged.connect(self.handle_point_AGV_comboBox)
@@ -424,6 +511,10 @@ class Ui_MainWindow(object):
         self.second_floor.setFocusPolicy(QtCore.Qt.ClickFocus)
         self.third_floor.setFocusPolicy(QtCore.Qt.ClickFocus)
         self.allMaps.setFocusPolicy(QtCore.Qt.ClickFocus)
+
+        # 键盘事件绑定
+        for canvas in self.floor_Canvas_list:
+            canvas.mpl_connect('key_press_event', self.keyPressEvent)
 
     #初始化地图画布
     def init_Canvas(self):
@@ -481,9 +572,9 @@ class Ui_MainWindow(object):
         self.tabWidget.setTabText(self.tabWidget.indexOf(self.allMaps), _translate("MainWindow", "全景地图"))
         self.AGV_groupBox.setTitle(_translate("MainWindow", "车辆管理"))
         self.AGV_ID.setText(_translate("MainWindow", "AGV_ID"))
-        self.random_addAGV.setText(_translate("MainWindow", "随机添加AGV"))
+        self.random_addAGV.setText(_translate("MainWindow", "随机添加四向车"))
         self.AGV_location.setText(_translate("MainWindow", "起始位置"))
-        self.addAGV.setText(_translate("MainWindow", "添加AGV"))
+        self.addAGV.setText(_translate("MainWindow", "添加四向车"))
         self.Task_groupBox.setTitle(_translate("MainWindow", "任务管理"))
         self.end_label.setText(_translate("MainWindow", "终点"))
         self.random_AddTask.setText(_translate("MainWindow", "随机添加任务"))
@@ -491,7 +582,7 @@ class Ui_MainWindow(object):
         self.start_label.setText(_translate("MainWindow", "起点"))
         self.point_AGV_comboBox.setItemText(0, _translate("MainWindow", "AGV1"))
         self.point_AGV_comboBox.setItemText(1, _translate("MainWindow", "AGV2"))
-        self.point_AGV.setText(_translate("MainWindow", "指定AGV"))
+        self.point_AGV.setText(_translate("MainWindow", "指定四向车"))
         self.test_path_planing.setTitle(_translate("MainWindow", "测试路径算法"))
         self.reset_Button.setText(_translate("MainWindow", "重置地图"))
         self.random_Add_Cases.setText(_translate("MainWindow", "随机添加案例"))
@@ -500,10 +591,12 @@ class Ui_MainWindow(object):
         self.point_algorithm_Qlable.setText(_translate("MainWindow", "指定算法"))
         self.point_algorithm_comboBox.setCurrentText(_translate("MainWindow", "Dijkstra"))
         self.point_algorithm_comboBox.setItemText(0, _translate("MainWindow", "Dijkstra"))
-        self.point_algorithm_comboBox.setItemText(1, _translate("MainWindow", "Astar"))
+        self.point_algorithm_comboBox.setItemText(1, _translate("MainWindow", "A*"))
         self.point_algorithm_comboBox.setItemText(2, _translate("MainWindow", "ATL_star"))
-        self.point_algorithm_comboBox.setItemText(3, _translate("MainWindow", "improve_Astar"))
-        self.point_algorithm_comboBox.setItemText(4, _translate("MainWindow", "weight_ATL_star"))
+        self.point_algorithm_comboBox.setItemText(3, _translate("MainWindow", "改进A*"))
+        self.point_algorithm_comboBox.setItemText(4, _translate("MainWindow", "双向A*"))
+        self.point_algorithm_comboBox.setItemText(5, _translate("MainWindow", "D*"))
+        self.point_algorithm_comboBox.setItemText(6, _translate("MainWindow", "D*Lite"))
         self.heuristic_Qlable.setText(_translate("MainWindow", "启发函数"))
         self.heuristic_ComboBox.setCurrentText(_translate("MainWindow", "欧几里得"))
         self.heuristic_ComboBox.setItemText(0, _translate("MainWindow", "欧几里得"))
@@ -519,20 +612,19 @@ class Ui_MainWindow(object):
     def handle_random_Add_Cases_button(self):
         try:
             floor = self.maps[self.tabWidget.currentIndex()]         # 获取当前地图
-            canvas = self.floor_Canvas_list[self.tabWidget.currentIndex()]  # 获取当前地图的canvas
+            # canvas = self.floor_Canvas_list[self.tabWidget.currentIndex()]  # 获取当前地图的canvas
             source = self.source_spinBox.value()
             target = self.target_spinBox.value()
             # targets = [26,50,323,1399,1727,1748]  # 测试目标点
-            heristic_name = self.heuristic_ComboBox.currentText()  # 获取启发函数名称
-            heuristic_index = self.heuristic_ComboBox.currentIndex()  # 获取启发函数索引
+            # heristic_name = self.heuristic_ComboBox.currentText()  # 获取启发函数名称
+            # heuristic_index = self.heuristic_ComboBox.currentIndex()  # 获取启发函数索引
             # algorithm_name = self.point_algorithm_comboBox.currentText()  # 获取算法名称
             # algorithm_index = self.point_algorithm_comboBox.currentIndex()  # 获取算法索引
             # algorithm_indices = [0, 1, 2, 3]                              # 算法索引
-            algorithm_results = {}  # 存储每个算法的结果
             # 获取当前日期和时间
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             # algorithm_results = self.path_planing.test_ATL_star(floor, source, target, heuristic_index)
-            algorithm_results = self.path_planing.test_All_Nodes(floor, source, target, heuristic_index)
+            algorithm_results = self.path_planing.test_All_Nodes(floor, source, target)
             # algorithm_count = self.point_algorithm_comboBox.count()         # 获取算法数量
             # for i in range(algorithm_count):                                # 遍历算法
             #     algorithm_name = self.point_algorithm_comboBox.itemText(i)
@@ -555,18 +647,17 @@ class Ui_MainWindow(object):
                 # # 将日志信息输出到文本框
                 # self.textBrowser.append(log_message)
                 # canvas.reset_canvas()  # 重置地图
-            self.dialog = ResultsDialog(algorithm_results)
-            self.textBrowser.append(f"{current_time} - 对比测试案例：起点{source}, 终点{target}。\n")
             for algorithm_name, result in algorithm_results.items():
                 self.textBrowser.append(f'{algorithm_name} - 最短距离：{result["cost"]}, 耗时：{result["take_time"]}毫秒， 转向次数：{result["turn_count"]},探索节点数：{result["explored"]}。\n')
+            self.dialog = ResultsDialog(algorithm_results)
         except Exception as e:
             self.textBrowser.append(f"{current_time} - 对比测试案例失败: {e}\n")  # 错误处理，输出失败原因
 
     #测试路径算法的触发函数
     def handle_add_case_button(self):
         try:
-            # floor = self.maps[self.tabWidget.currentIndex()]         # 获取当前地图
-            floor = self.maps[3]    #整个地图
+            floor = self.maps[self.tabWidget.currentIndex()]         # 获取当前地图
+            # floor = self.maps[3]    #整个地图
             canvas = self.floor_Canvas_list[self.tabWidget.currentIndex()]  # 获取当前地图的canvas
             source = self.source_spinBox.value()
             target = self.target_spinBox.value()
@@ -574,40 +665,162 @@ class Ui_MainWindow(object):
             heristic_name = self.heuristic_ComboBox.currentText()  # 获取启发函数名称
             algorithm_name = self.point_algorithm_comboBox.currentText()  # 获取算法名称
             algorithm_index = self.point_algorithm_comboBox.currentIndex()  # 获取算法索引
+
             # 获取当前日期和时间
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-            take_time, path, explored, cost, turn_count = self.path_planing.Analyze_Path(floor, source, target, algorithm_index, heuristic_index)  # 运行路径算法
+            take_time, path, explored, cost, turn_count, path_time = self.path_planing.Analyze_Path(floor, source, target, algorithm_name)  # 运行路径算法
             canvas.show_visited_process(floor,explored)
             # canvas.show_visited_process_slowly(floor, explored)  # 显示探索过程
             canvas.show_path(floor,path,algorithm_index)    # 显示路径
-            #计算路径时间
-            path_time = self.path_planing.cal_path_time(floor,path)
             log_message = (f"{current_time} - 路径算法测试案例：起点{source}, "
                            f"终点{target}, 算法：{algorithm_name},启发函数：{heristic_name}, "
                            # f"路径：{path}，"
                            f"最短距离：{cost}, 耗时：{take_time}毫秒， 转向次数：{turn_count},"
-                           f"探索节点数：{len(explored)},路径时间：{0}秒。\n")
+                           f"探索节点数：{len(explored)},路径时间：{path_time}秒。\n")
                 #将日志信息输出到文本框
             # canvas.save_image(source, target, algorithm_name,heristic_name)  # 保存图片
             self.textBrowser.append(log_message)
         except Exception as e:
             self.textBrowser.append(f"{current_time} - 路径算法测试案例失败: {e}")  # 错误处理，输出失败原因
 
-    def handle_random_AddTask_button(self):
-        print("随机添加任务")
+    def randon_Add_Task(self):
+        """随机添加任务"""
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        if not self.agvs:
+            self.textBrowser.append(f"{current_time} - 请先添加AGV！")
+            return
 
-    def handle_addTask_button(self):
-        print("添加任务")
+        floor = self.maps[self.tabWidget.currentIndex()]
+        nodes = list(floor.nodes())
+        source = random.choice(nodes)
+        target = random.choice(nodes)
+        while target == source:
+            target = random.choice(nodes)
+
+        task_id = len(self.tasks) + 1
+        new_task = {
+            'id': task_id,
+            'source': source,
+            'target': target,
+            'priority': random.randint(1, 5),
+            'time_window': (0, 100),
+            'agv_id': None  # 未指定AGV，交给规划器分配
+        }
+        self.tasks.append(new_task)
+        self.textBrowser.append(f"{current_time} - 随机添加任务 {task_id}：{source} -> {target}")
+
+        self.planner.plan_paths()
+        canvas = self.floor_Canvas_list[self.tabWidget.currentIndex()]
+        canvas.show_agv_paths_dynamic(self.planner)
+
+    def add_Task(self):
+        """手动添加任务并触发路径规划"""
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        source = self.start_spinBox.value()
+        target = self.end_spinBox.value()
+        agv_id = int(self.point_AGV_comboBox.currentText().replace("AGV", "")) if self.point_AGV_comboBox.currentText() else None
+
+        # 检查输入有效性
+        floor = self.maps[self.tabWidget.currentIndex()]
+        if source not in floor.nodes() or target not in floor.nodes():
+            self.textBrowser.append(f"{current_time} - 起点 {source} 或终点 {target} 无效！")
+            return
+        if not self.agvs:
+            self.textBrowser.append(f"{current_time} - 请先添加AGV！")
+            return
+        if agv_id and agv_id not in [agv['id'] for agv in self.agvs]:
+            self.textBrowser.append(f"{current_time} - AGV {agv_id} 不存在！")
+            return
+
+        # 添加任务
+        task_id = len(self.tasks) + 1
+        new_task = {
+            'id': task_id,
+            'source': source,
+            'target': target,
+            'priority': 1,  # 默认优先级，可添加控件调整
+            'time_window': (0, 100),  # 示例时间窗
+            'agv_id': agv_id  # 指定AGV，若未指定则为None
+        }
+        self.tasks.append(new_task)
+        self.textBrowser.append(f"{current_time} - 添加任务 {task_id}：{source} -> {target}，指定AGV {agv_id or '未指定'}")
+
+        # 规划并显示路径
+        self.planner.plan_paths()
+        canvas = self.floor_Canvas_list[self.tabWidget.currentIndex()]
+        canvas.show_agv_paths_dynamic(self.planner)
 
     def handle_random_addAGV_button(self):
-        print("随机添加AGV")
+        """随机添加AGV并分配任务"""
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        floor = self.maps[self.tabWidget.currentIndex()]
+        nodes = list(floor.nodes())
+
+        # 随机生成AGV ID和位置
+        agv_id = max([agv['id'] for agv in self.agvs] + [0]) + 1  # 确保ID唯一
+        agv_pos = random.choice(nodes)
+        # 添加AGV
+        new_agv = {'id': agv_id, 'pos': agv_pos, 'status': 'idle'}
+        self.agvs.append(new_agv)
+        self.point_AGV_comboBox.addItem(f"AGV{agv_id}")
+        self.textBrowser.append(f"{current_time} - 随机添加四向车 {agv_id}，起始位置 {agv_pos}")
+
+        # 随机生成任务
+        source = random.choice(nodes)
+        target = random.choice(nodes)
+        while target == source:
+            target = random.choice(nodes)
+        task_id = len(self.tasks) + 1
+        new_task = {
+            'id': task_id,
+            'source': source,
+            'target': target,
+            'priority': random.randint(1, 5),
+            'time_window': (0, 100),  # 示例时间窗，可调整
+            'agv_id': agv_id
+        }
+        self.tasks.append(new_task)
+        self.textBrowser.append(f"{current_time} - 为AGV {agv_id} 添加任务 {task_id}：{source} -> {target}")
+
+        # 规划并显示路径
+        self.planner.plan_paths()
+        canvas = self.floor_Canvas_list[self.tabWidget.currentIndex()]
+        canvas.show_agv_paths_dynamic(self.planner)
+
 
     def handle_addAGV_button(self):
-        print("添加AGV")
+        """手动添加AGV并触发路径规划"""
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        agv_id = self.AGV_ID_comboBox.value()
+        agv_pos = self.AGV_location_comboBox.value()
+
+        # 检查AGV是否已存在
+        if any(agv['id'] == agv_id for agv in self.agvs):
+            self.textBrowser.append(f"{current_time} - AGV {agv_id} 已存在！")
+            return
+
+        # 检查位置是否有效
+        floor = self.maps[self.tabWidget.currentIndex()]
+        if agv_pos not in floor.nodes():
+            self.textBrowser.append(f"{current_time} - 位置 {agv_pos} 无效！")
+            return
+
+        # 添加AGV
+        new_agv = {'id': agv_id, 'pos': agv_pos, 'status': 'idle'}
+        self.agvs.append(new_agv)
+        self.point_AGV_comboBox.addItem(f"AGV{agv_id}")  # 更新下拉框
+        self.textBrowser.append(f"{current_time} - 添加AGV {agv_id}，起始位置 {agv_pos}")
+
+        # 如果有待分配任务，触发规划
+        if self.tasks:
+            self.planner.plan_paths()
+            canvas = self.floor_Canvas_list[self.tabWidget.currentIndex()]
+            canvas.show_agv_paths_dynamic(self.planner)
 
     def handle_point_AGV_comboBox(self):
-        print("指定AGV")
+        """更新指定AGV的选择"""
+        agv_id = self.point_AGV_comboBox.currentText()
+        self.textBrowser.append(f"指定AGV: {agv_id}")
 
     def handle_point_algorithm_comboBox(self):
         # print("指定算法")
@@ -632,8 +845,16 @@ class Ui_MainWindow(object):
             self.target_spinBox.clear() # 清除原有值
     #重置地图
     def handle_reset_Button(self):
+        """重置地图和AGV任务"""
         canvas = self.floor_Canvas_list[self.tabWidget.currentIndex()]  # 获取当前地图的canvas
         canvas.reset_canvas()  # 重置地图
+        canvas = self.floor_Canvas_list[self.tabWidget.currentIndex()]
+        canvas.reset_canvas()
+        self.agvs.clear()
+        self.tasks.clear()
+        self.point_AGV_comboBox.clear()
+        self.planner = MultiVehiclePathPlanner(self.maps[3], self.agvs, self.tasks)  # 重置规划器
+        self.textBrowser.append(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - 重置地图和AGV任务")
 
     def handle_open_button(self):
         print("open")

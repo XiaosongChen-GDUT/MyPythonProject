@@ -31,8 +31,8 @@ third_connect_point = [3899,4135]               #3楼接驳点
 connect_points = [642,1116,674,1148,2374,2844,2406,2876,3899,4135]#所有接驳点
 #1501、1540定位空托盘出口点  暂时不考虑空托盘入口点，定位货位点！
 pallet_out = [1501,1540]
-file_path = '../Resource/WMSGraph_12_9.xlsx'
-'''读取文件并创建地图'''
+# file_path = '../Resource/WMSGraph_12_9.xlsx'
+file_path = "D:\\Application_Data\\MyPythonProject\\Resource\\WMSGraph_12_9.xlsx"
 class Model:
     def __init__(self):
         self.combined_graph = nx.Graph()
@@ -289,6 +289,9 @@ class Model:
                         else:
                             print(f"节点{neighbor}位置错误！pos：{pos[neighbor]}")
                             continue
+            # 对 location 字典中的值保留两位小数
+            for node, loc in location.items():
+                location[node] = (round(loc[0], 2), round(loc[1], 2))
             nx.set_node_attributes(floor, location, 'location')#将location加入图的属性中
             nx.set_node_attributes(floor, pos,'pos')
             nx.set_node_attributes(floor, node_colors,'node_colors')
@@ -307,6 +310,12 @@ class Model:
         分析储货巷道类型（栈式或双向队列），并返回货道信息
         :param floor: 已构建的地图图结构（包含节点属性）
         :return: 货道字典 {aisle_id: {type, nodes, row,start_col,end_col,capacity}}
+        type: -1: 左侧为最深深度， 0: 双向队列，1: 右侧为最深深度
+        nodes: 货道节点列表
+        row: 货道所在行
+        start_col: 货道起始列
+        end_col: 货道终止列
+        capacity: 货道容量
         """
         pos = nx.get_node_attributes(floor, 'pos')       # 排-列-层
         status = nx.get_node_attributes(floor,'status')  # 节点状态
@@ -356,7 +365,15 @@ class Model:
                             # 判断是否有邻居节点为货道
                             left_has_aisle = any(status[n] == -1 and pos[n][0] == row and pos[n][1] < start_col for n in start_neighbors)
                             right_has_aisle = any(status[n] == -1 and pos[n][0] == row and pos[n][1] > end_col for n in end_neighbors)
-                            aisle_type = 'queue' if left_has_aisle and right_has_aisle else 'stack'
+                            # 货道类型
+                            #-1：左侧为最深深度， 0: 双向队列，1: 右侧为最深深度
+                            if left_has_aisle and right_has_aisle:
+                                aisle_type = 0
+                            elif left_has_aisle:
+                                aisle_type = 1
+                            else:
+                                aisle_type = -1
+                            # aisle_type = 'queue' if left_has_aisle and right_has_aisle else 'stack'
 
                             continuous_freight_groups[aisle_id] = {
                                 'type': aisle_type,  # 这里需要根据实际情况确定类型
@@ -385,7 +402,14 @@ class Model:
                     # 判断是否有邻居节点为货道
                     left_has_aisle = any(status[n] == -1 and pos[n][0] == row and pos[n][1] < start_col for n in start_neighbors)
                     right_has_aisle = any(status[n] == -1 and pos[n][0] == row and pos[n][1] > end_col for n in end_neighbors)
-                    aisle_type = 'queue' if left_has_aisle and right_has_aisle else 'stack'
+                    #-1：左侧为最深深度， 0: 双向队列，1: 右侧为最深深度
+                    if left_has_aisle and right_has_aisle:
+                        aisle_type = 0
+                    elif left_has_aisle:
+                        aisle_type = 1
+                    else:
+                        aisle_type = -1
+                    # aisle_type = 'queue' if left_has_aisle and right_has_aisle else 'stack'
 
                     continuous_freight_groups[aisle_id] = {
                         'type': aisle_type,  # 这里需要根据实际情况确定类型
@@ -512,81 +536,12 @@ def main():
     # 绘制所有楼层地图
     # dm.draw_floors([floor1, floor2, floor3], ["Floor 1", "Floor 2", "Floor 3"])
 
-    # dm.analyze_storage_aisles(floor1)
-    # dm.analyze_storage_aisles(floor2)
-    # dm.analyze_storage_aisles(floor3)
-    # dm.draw_floor(floor1, "Floor 1")
-    # dm.draw_floor(floor2, "Floor 2")
-    # dm.draw_floor(floor3, "Floor 3")
 
 if __name__ == '__main__':
     main()
 
+
 Status = {0: "空闲", 1: "忙碌", 2: "故障"}
-class Vehicle:
-    def __init__(self,View,Env, ID, initial_position=0):
-        self.max_speed = 5  # AGV最大速度
-        self.acceleration = 2  # AGV加速度
-        self.deceleration = 2  # AGV减速度
-        self.current_speed = 0  # AGV当前速度
-        self.status = 0  # AGV当前状态 0-空闲 1-忙碌 2-故障
-
-        self.view = View    # 图
-        self.env = Env    # 环境
-        self.ID = ID    # AGVID
-        self.current_position = initial_position     # AGV初始位置
-        self.create_show( self.current_position)  # 创建AGV图片
-        self.image = mpimg.imread("../Resource/AGV.png")  # 图片
-
-    def create_show(self, node):
-        """
-        更新AGV图片的位置，显示在指定的节点上。
-        :param node: 指定的节点
-        """
-        # 计算节点的位置
-        # self.DG.nodes[node]['pos'] = (node[0], node[1])
-        # x, y = self.DG.nodes[node]['pos']
-        self.DG = self.view.DG
-        # print(self.DG)
-        x = self.DG.nodes[node]['row']
-        y = self.DG.nodes[node]['col']
-        print(f"AGV的位置为: ({x}, {y})")
-        # 更新AGV图片的位置
-
-        # nx.draw_networkx_nodes(self.DG, (x, y), [node], node_size=80, alpha=0.8, node_color='red')
-        # plt.draw()
-        # plt.pause(0.001)
-        # self.agv_image = self.ax.imshow(self.Image, aspect='auto', extent=(x-0.1, x+0.1, y-0.1, y+0.1), zorder=2)
-
-    def move(self):
-        for node in self.path:
-            yield self.env.timeout(1)  # 模拟每一步的时间
-            self.current_position = node
-            print(f"AGV 当前节点: {node}, 时间: {self.env.now}")
-
-    def moveing_AGV(self,path):
-        # 移动AGV
-        current_speed = 0
-        current_node_index = 0
-        speed = 1  # 默认速度
-        while current_node_index < len(path) - 1:
-            start_node = path[current_node_index]
-            end_node = path[current_node_index + 1]
-            # 计算移动距离（假设图中有边的权重表示距离）
-            distance = self.DG.edges[start_node, end_node]['weight']  # 获取两节点之间的距离
-            # 计算到达下一个节点所需的时间
-            time_to_move = distance / speed
-            # 移动过程
-            # for _ in range(int(time_to_move)):
-            time.sleep(time_to_move)  # 每秒钟更新一次
-            # 更新当前位置
-            self.current_position = end_node
-            x, y = self.DG.nodes[self.current_position]  # 获取目标节点的位置
-            self.agv_image = self.ax.imshow(self.Image, aspect='auto', extent=(x-0.1, x+0.1, y-0.1, y+0.1), zorder=2)
-
-            current_node_index += 1
-            # print(f"到达节点: {end_node}")
-        print("AGV已到达终点。")
 
 
 
